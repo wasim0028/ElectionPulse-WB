@@ -1,0 +1,14 @@
+# --- TERRAFORM ---
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+
+# --- DOCKER ---
+.env
+data/
+
+# --- GENERAL ---
+.vscode/
+*.log
+__pycache__/
