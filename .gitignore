@@ -1,0 +1,17 @@
+# --- Frontend (election-frontend-wb) ---
+election-frontend-wb/node_modules/
+election-frontend-wb/dist/
+election-frontend-wb/build/
+election-frontend-wb/.env*
+
+# --- Backend (ElectionAPI_WB) ---
+ElectionAPI_WB/bin/
+ElectionAPI_WB/obj/
+ElectionAPI_WB/appsettings.Development.json
+ElectionAPI_WB/*.user
+
+# --- General / Tooling ---
+.vscode/
+.DS_Store
+__pycache__/
+*.log

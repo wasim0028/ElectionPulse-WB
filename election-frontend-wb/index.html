@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="bn">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ElectionPulse WB 2026</title>
+  <!-- Sora (UI) + Noto Sans Bengali (Bengali script) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800;900&family=Noto+Sans+Bengali:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    /* Bengali text uses Noto Sans Bengali */
+    :lang(bn), .bn { font-family: 'Noto Sans Bengali', sans-serif !important; }
+
+    /* Leaflet popup overrides */
+    .leaflet-popup-content-wrapper {
+      background: rgba(9,16,31,0.97) !important;
+      backdrop-filter: blur(12px) !important;
+      border: 1px solid rgba(255,255,255,0.08) !important;
+      border-radius: 14px !important;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.8) !important;
+      color: #e2e8f0 !important;
+      padding: 0 !important;
+    }
+    .leaflet-popup-content { margin: 12px 14px !important; min-width: 160px !important; }
+    .leaflet-popup-tip-container { display: none; }
+    .leaflet-container { background: #070e1c !important; }
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 99px; }
+  </style>
+</head>
+<body class="bg-slate-950">
+  <div id="root"></div>
+  <script type="module" src="/src/main.jsx"></script>
+</body>
+</html>
