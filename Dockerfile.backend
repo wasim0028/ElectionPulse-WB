@@ -1,0 +1,43 @@
+# ── Stage 1: Build ────────────────────────────────────────────────────────────
+FROM mcr.microsoft.com/dotnet/sdk:8.0-alpine AS builder
+
+WORKDIR /src
+
+# Copy csproj and restore (layer cache)
+COPY ElectionAPI_WB.csproj ./
+RUN dotnet restore
+
+# Copy all source files
+COPY . .
+
+# Publish release build
+RUN dotnet publish -c Release -o /app/publish \
+    --no-restore \
+    -r linux-musl-x64 \
+    --self-contained false
+
+# ── Stage 2: Runtime ───────────────────────────────────────────────────────────
+FROM mcr.microsoft.com/dotnet/aspnet:8.0-alpine AS runner
+
+WORKDIR /app
+
+# Install curl for health checks
+RUN apk add --no-cache curl
+
+# Copy published output
+COPY --from=builder /app/publish .
+
+# Create non-root user
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+USER appuser
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+  CMD curl -f http://localhost:8080/health || exit 1
+
+EXPOSE 8080
+
+ENV ASPNETCORE_URLS=http://+:8080
+ENV ASPNETCORE_ENVIRONMENT=Production
+
+ENTRYPOINT ["dotnet", "ElectionAPI_WB.dll"]
