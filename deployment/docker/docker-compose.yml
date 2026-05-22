@@ -1,0 +1,42 @@
+version: "3.9"
+
+services:
+  # ── React Frontend ──────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ../election-frontend-wb
+      dockerfile: ../deployment/docker/Dockerfile.frontend
+    image: election-frontend:latest
+    ports:
+      - "3000:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - election-net
+    restart: unless-stopped
+
+  # ── .NET Backend API ────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ../ElectionAPI_WB
+      dockerfile: ../deployment/docker/Dockerfile.backend
+    image: election-backend:latest
+    ports:
+      - "5000:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ConnectionStrings__DefaultConnection=Server=172.16.202.79;Database=Test_Wasim;User Id=sa;Password=Republic@2017;TrustServerCertificate=True;MultipleActiveResultSets=True
+    networks:
+      - election-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+networks:
+  election-net:
+    driver: bridge

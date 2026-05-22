@@ -1,0 +1,78 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# Ingress — AWS Application Load Balancer
+# Requires: aws-load-balancer-controller installed in cluster
+# ═══════════════════════════════════════════════════════════════════════════════
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: election-ingress
+  namespace: election
+  annotations:
+    # AWS ALB Controller
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+
+    # HTTPS / TLS
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    # ⚠ Replace with your ACM certificate ARN
+    alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:ap-south-1:123456789012:certificate/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+
+    # Health check
+    alb.ingress.kubernetes.io/healthcheck-path: "/health"
+    alb.ingress.kubernetes.io/healthcheck-interval-seconds: "30"
+    alb.ingress.kubernetes.io/healthy-threshold-count: "2"
+    alb.ingress.kubernetes.io/unhealthy-threshold-count: "3"
+
+    # Security
+    alb.ingress.kubernetes.io/security-groups: ""   # optional custom SG
+    alb.ingress.kubernetes.io/wafv2-acl-arn: ""     # optional WAF
+
+    # Stickiness (for session)
+    alb.ingress.kubernetes.io/target-group-attributes: "stickiness.enabled=true,stickiness.lb_cookie.duration_seconds=86400"
+
+spec:
+  rules:
+    # ⚠ Replace with your actual domain
+    - host: electionpulse.yourdomain.com
+      http:
+        paths:
+          # All traffic → frontend (nginx handles /api proxy internally)
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: election-frontend-svc
+                port:
+                  number: 80
+
+---
+# ── NetworkPolicy — restrict inter-pod traffic ─────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: election-network-policy
+  namespace: election
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+
+  ingress:
+    # Allow ingress to frontend from ALB (any source for now)
+    - ports:
+        - port: 80
+
+    # Allow ingress to backend ONLY from frontend pods
+    - from:
+        - podSelector:
+            matchLabels:
+              app: election-frontend
+      ports:
+        - port: 8080
+
+  egress:
+    # Allow all outbound (DNS, RDS, ECR pull)
+    - {}
