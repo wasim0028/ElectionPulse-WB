@@ -15,3 +15,17 @@ ElectionAPI_WB/*.user
 .DS_Store
 __pycache__/
 *.log
+# --- TERRAFORM ---
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+
+# --- DOCKER ---
+.env
+data/
+
+# --- GENERAL ---
+.vscode/
+*.log
+__pycache__/

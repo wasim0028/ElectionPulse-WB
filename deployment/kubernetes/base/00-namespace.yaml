@@ -1,0 +1,42 @@
+# ── Namespace ──────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: election
+  labels:
+    app.kubernetes.io/managed-by: kubectl
+    environment: production
+
+---
+# ── ConfigMap — shared app config ─────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: election-config
+  namespace: election
+data:
+  ASPNETCORE_ENVIRONMENT: "Production"
+  ASPNETCORE_URLS: "http://+:8080"
+  # DB host is injected from Secret; only non-sensitive config here
+  DB_PORT: "1433"
+  DB_NAME: "ElectionWB"
+
+---
+# ── Secret — database credentials (base64 encoded) ───────────────────────────
+# In production use AWS Secrets Manager + External Secrets Operator instead
+# kubectl create secret generic election-db-secret \
+#   --from-literal=DB_HOST=<rds-endpoint> \
+#   --from-literal=DB_USER=sa \
+#   --from-literal=DB_PASS=<password> \
+#   -n election
+apiVersion: v1
+kind: Secret
+metadata:
+  name: election-db-secret
+  namespace: election
+type: Opaque
+stringData:
+  # ⚠ Replace with actual RDS endpoint after terraform apply
+  DB_HOST: "electionpulse-wb-sqlserver.xxxxxxx.ap-south-1.rds.amazonaws.com"
+  DB_USER: "sa"
+  DB_PASS: "REPLACE_WITH_ACTUAL_PASSWORD"
