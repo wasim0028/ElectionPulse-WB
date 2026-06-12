@@ -12,6 +12,9 @@ builder.Services.AddControllers()
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+// FIXED: Register core framework health check services infrastructure
+builder.Services.AddHealthChecks();
+
 builder.Services.AddDbContext<ElectionDbContext>(options =>
     options.UseSqlServer(
         builder.Configuration.GetConnectionString("DefaultConnection")));
@@ -35,5 +38,10 @@ app.UseSwaggerUI();
 app.UseCors("AllowAll");
 
 app.UseAuthorization();
+
+// FIXED: Expose the route requested by your Dockerfile healthcheck command
+app.MapHealthChecks("/health");
+
 app.MapControllers();
 app.Run();
+
