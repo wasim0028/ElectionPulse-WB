@@ -4,9 +4,9 @@ services:
   # ── React Frontend ──────────────────────────────────────────────────────────
   frontend:
     build:
-      context: ../election-frontend-wb
-      dockerfile: ../deployment/docker/Dockerfile.frontend
-    image: election-frontend:latest
+      context: ../../
+      dockerfile: deployment/docker/Dockerfile.frontend
+    image: election-frontend:v1.0
     ports:
       - "3000:80"
     depends_on:
@@ -16,17 +16,18 @@ services:
       - election-net
     restart: unless-stopped
 
-  # ── .NET Backend API ────────────────────────────────────────────────────────
+  # ── .NET 8 Backend API ────────────────────────────────────────────────────────
   backend:
     build:
-      context: ../ElectionAPI_WB
-      dockerfile: ../deployment/docker/Dockerfile.backend
-    image: election-backend:latest
+      context: ../../
+      dockerfile: deployment/docker/Dockerfile.backend
+    image: election-backend:v1.0
     ports:
       - "5000:8080"
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
-      - ConnectionStrings__DefaultConnection=Server=172.16.202.79;Database=Test_Wasim;User Id=sa;Password=Republic@2017;TrustServerCertificate=True;MultipleActiveResultSets=True
+      # Updated with your active admin user and devops#0028 credentials
+      - ConnectionStrings__DefaultConnection=Server=database-1.c9os04k0moam.ap-south-1.rds.amazonaws.com,1433;Database=Test_Wasim;User Id=admin;Password=devops#0028;TrustServerCertificate=True;Encrypt=True;
     networks:
       - election-net
     restart: unless-stopped

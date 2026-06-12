@@ -3,12 +3,12 @@ FROM mcr.microsoft.com/dotnet/sdk:8.0-alpine AS builder
 
 WORKDIR /src
 
-# Copy csproj and restore (layer cache)
-COPY ElectionAPI_WB.csproj ./
-RUN dotnet restore
+# UPDATED: Copy csproj relative to the repo root context
+COPY ElectionAPI_WB/ElectionAPI_WB.csproj ./
+RUN dotnet restore -r linux-musl-x64
 
-# Copy all source files
-COPY . .
+# UPDATED: Copy all source files from the backend folder
+COPY ElectionAPI_WB/ .
 
 # Publish release build
 RUN dotnet publish -c Release -o /app/publish \
@@ -21,8 +21,8 @@ FROM mcr.microsoft.com/dotnet/aspnet:8.0-alpine AS runner
 
 WORKDIR /app
 
-# Install curl for health checks
-RUN apk add --no-cache curl
+# FIXED: Install curl for health checks AND icu-libs for SQL Server connectivity
+RUN apk add --no-cache curl icu-libs
 
 # Copy published output
 COPY --from=builder /app/publish .
@@ -39,5 +39,8 @@ EXPOSE 8080
 
 ENV ASPNETCORE_URLS=http://+:8080
 ENV ASPNETCORE_ENVIRONMENT=Production
+
+# FIXED: Tell .NET to use the installed globalization library for SQL queries
+ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
 
 ENTRYPOINT ["dotnet", "ElectionAPI_WB.dll"]
