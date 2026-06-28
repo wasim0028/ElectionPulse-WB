@@ -8,13 +8,19 @@ services:
       dockerfile: deployment/docker/Dockerfile.frontend
     image: election-frontend:v1.0
     ports:
-      - "3000:80"
+      - "3000:5173"
     depends_on:
-      backend:
-        condition: service_healthy
+      - backend
     networks:
       - election-net
     restart: unless-stopped
+    # ── FIXED HEALTHCHECK FOR ALPINE NGINX ──
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- --spider http://localhost/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
 
   # ── .NET 8 Backend API ────────────────────────────────────────────────────────
   backend:

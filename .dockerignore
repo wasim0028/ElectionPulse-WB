@@ -1,0 +1,25 @@
+# ── Source Control ──
+.git
+.gitignore
+README.md
+.github
+
+# ── .NET Backend Ignores ──
+**/bin/
+**/obj/
+**/.vs/
+**/.vscode/
+**/*.user
+**/*.suo
+
+# ── Node.js Frontend Ignores ──
+**/node_modules/
+**/dist/
+**/build/
+.npm/
+npm-debug.log*
+
+# ── Local Environment Secrets ──
+**/.env
+**/.env.local
+**/.env.*.local

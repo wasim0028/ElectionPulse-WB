@@ -1,7 +1,7 @@
 // src/App.jsx
 import { useState, useEffect } from "react";
 import SearchBar             from "./components/SearchBar";
-import ConstituencyMap       from "./components/ConstituencyMap";
+import ConstituencyMap       from "./components/Constituencymap";
 import VotesPieChart         from "./components/VotesPieChart";
 import DetailCard            from "./components/DetailCard";
 import PartyTable            from "./components/PartyTable";

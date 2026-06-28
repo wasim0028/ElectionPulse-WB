@@ -37,7 +37,7 @@ variable "private_subnet_cidrs" {
 variable "kubernetes_version" {
   description = "EKS Kubernetes version"
   type        = string
-  default     = "1.29"
+  default     = "1.34"
 }
 
 variable "node_group_config" {
@@ -62,7 +62,7 @@ variable "node_group_config" {
 variable "db_instance_class" {
   description = "RDS instance class"
   type        = string
-  default     = "db.t3.medium"
+  default     = "db.m5.large"
 }
 
 variable "db_username" {

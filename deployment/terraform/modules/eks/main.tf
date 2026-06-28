@@ -117,6 +117,12 @@ resource "aws_iam_role_policy_attachment" "nodes_ecr_policy" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
+# ── FIX: Added AmazonEBSCSIDriverPolicy attachment to prevent 20m hang ─────────
+resource "aws_iam_role_policy_attachment" "nodes_ebs_csi_policy" {
+  role       = aws_iam_role.nodes.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
+}
+
 # ── Security Group for Nodes ───────────────────────────────────────────────────
 resource "aws_security_group" "nodes" {
   name        = "${var.name}-eks-nodes-sg"
@@ -171,6 +177,7 @@ resource "aws_eks_node_group" "main" {
     aws_iam_role_policy_attachment.nodes_worker_policy,
     aws_iam_role_policy_attachment.nodes_cni_policy,
     aws_iam_role_policy_attachment.nodes_ecr_policy,
+    aws_iam_role_policy_attachment.nodes_ebs_csi_policy, # Ensure policy mounts first
   ]
 
   tags = { Name = "${var.name}-node-group" }
@@ -178,31 +185,35 @@ resource "aws_eks_node_group" "main" {
   lifecycle { ignore_changes = [scaling_config[0].desired_size] }
 }
 
-# ── EKS Add-ons ───────────────────────────────────────────────────────────────
+# ── EKS Add-ons (FIXED: Deprecation warning cleaned up) ───────────────────────
 resource "aws_eks_addon" "coredns" {
-  cluster_name      = aws_eks_cluster.main.name
-  addon_name        = "coredns"
-  resolve_conflicts = "OVERWRITE"
-  depends_on        = [aws_eks_node_group.main]
+  cluster_name                = aws_eks_cluster.main.name
+  addon_name                  = "coredns"
+  resolve_conflicts_on_create = "OVERWRITE"
+  resolve_conflicts_on_update = "OVERWRITE"
+  depends_on                  = [aws_eks_node_group.main]
 }
 
 resource "aws_eks_addon" "kube_proxy" {
-  cluster_name      = aws_eks_cluster.main.name
-  addon_name        = "kube-proxy"
-  resolve_conflicts = "OVERWRITE"
+  cluster_name                = aws_eks_cluster.main.name
+  addon_name                  = "kube-proxy"
+  resolve_conflicts_on_create = "OVERWRITE"
+  resolve_conflicts_on_update = "OVERWRITE"
 }
 
 resource "aws_eks_addon" "vpc_cni" {
-  cluster_name      = aws_eks_cluster.main.name
-  addon_name        = "vpc-cni"
-  resolve_conflicts = "OVERWRITE"
+  cluster_name                = aws_eks_cluster.main.name
+  addon_name                  = "vpc-cni"
+  resolve_conflicts_on_create = "OVERWRITE"
+  resolve_conflicts_on_update = "OVERWRITE"
 }
 
 resource "aws_eks_addon" "ebs_csi" {
-  cluster_name      = aws_eks_cluster.main.name
-  addon_name        = "aws-ebs-csi-driver"
-  resolve_conflicts = "OVERWRITE"
-  depends_on        = [aws_eks_node_group.main]
+  cluster_name                = aws_eks_cluster.main.name
+  addon_name                  = "aws-ebs-csi-driver"
+  resolve_conflicts_on_create = "OVERWRITE"
+  resolve_conflicts_on_update = "OVERWRITE"
+  depends_on                  = [aws_eks_node_group.main]
 }
 
 # ── Outputs ────────────────────────────────────────────────────────────────────

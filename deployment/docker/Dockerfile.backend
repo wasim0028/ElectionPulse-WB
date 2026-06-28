@@ -1,46 +1,62 @@
 # ── Stage 1: Build ────────────────────────────────────────────────────────────
+
+# FROM mcr.microsoft.com/...: Fetches the official Microsoft .NET 8 Software Development Kit (SDK) image. It contains all compilers and tools required to build C# code.alpine: Uses a secure, ultra-lightweight Linux distribution to speed up the downloading process.AS builder: Assigns a label builder to this stage so its compiled artifacts can be pulled into later stages.
 FROM mcr.microsoft.com/dotnet/sdk:8.0-alpine AS builder
 
+# Creates a folder named /src inside the container image filesystem.Switches the current execution path to /src for all subsequent build steps.
 WORKDIR /src
 
-# UPDATED: Copy csproj relative to the repo root context
+# Copies only the project definition file (.csproj) from your local system into the container workspace.Optimization: Copies this file first to cache NuGet packages. The layer won't rebuild unless your project configurations or packages change.
 COPY ElectionAPI_WB/ElectionAPI_WB.csproj ./
+
+# Downloads all required NuGet external library dependencies.-r linux-musl-x64: Explicitly tells .NET that it is downloading packages optimized for an Alpine Linux target (which uses musl instead of traditional glibc libraries).
 RUN dotnet restore -r linux-musl-x64
 
-# UPDATED: Copy all source files from the backend folder
+# Copies all remaining C# source files, controllers, and internal code assets into the container's active working directory (/src).
 COPY ElectionAPI_WB/ .
 
-# Publish release build
+# Compiles your source code into optimized production binaries.-c Release: Compiles using production optimizations (strips debug flags).-o /app/publish: Outputs the compiled binaries into a directory named /app/publish.--no-restore: Skips fetching packages again since they were downloaded during the dotnet restore step.-r linux-musl-x64: Ensures the compiled execution assets conform perfectly to Alpine Linux execution logic.--self-contained false: Prevents embedding the core .NET runtime into the application bundle, keeping the final output size small.
 RUN dotnet publish -c Release -o /app/publish \
     --no-restore \
     -r linux-musl-x64 \
     --self-contained false
 
 # ── Stage 2: Runtime ───────────────────────────────────────────────────────────
+
+# FROM mcr.microsoft.com/...: Switches over to the clean ASP.NET Runtime image. It strips out the heavy SDK compiler tools to optimize security and shrink image size.AS runner: Designates this lightweight stage as our primary shipping container.
 FROM mcr.microsoft.com/dotnet/aspnet:8.0-alpine AS runner
 
+# Establishes a brand-new application execution home directory located at /app inside the runner phase.
 WORKDIR /app
 
-# FIXED: Install curl for health checks AND icu-libs for SQL Server connectivity
+# Installs crucial base utility packages via the Alpine Package Manager (apk).--no-cache: Downloads packages without saving installation archives to keep image bloat low.curl: Required to execute the HTTP verification payload inside your HEALTHCHECK block.icu-libs: Installs internationalization components. Without this, specific operations like SQL Server client calls, date formatting, and string collation will crash inside Alpine.
 RUN apk add --no-cache curl icu-libs
 
-# Copy published output
+# Reaches backwards in time to intercept the builder stage filesystem.Clones only the compiled production binaries from /app/publish into the root of our clean running directory (/app).
 COPY --from=builder /app/publish .
 
-# Create non-root user
+# Generates a custom, isolated operating system system group (appgroup) and an unprivileged system user (appuser).
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+
+# Switches container execution context from the all-powerful root administrator account to our new restricted appuser.Security Benefit: If a hacker exploits a flaw in your API, they remain trapped inside a locked-down user shell with no administrative system access
 USER appuser
 
-# Health check
+# Configures automatic background status monitoring loops.--interval=30s: pings the health route every 30 seconds.--timeout=10s: Cancels individual checks if they stall past 10 seconds.--start-period=30s: Grants your .NET API a 30-second window to completely boot up before tracking failure rates.--retries=3: Marks the container instance as broken if it fails 3 times back-to-back.CMD curl -f...: Requests the local endpoint. If it returns an error HTTP status code, it triggers an exit failure state (exit 1).
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
   CMD curl -f http://localhost:8080/health || exit 1
 
+# Documents that the container process intends to stream network data out of container network port 8080.
 EXPOSE 8080
 
+
+# Injects an environment configuration flag forcing the internal web engine (Kestrel) to bind its listeners directly to port 8080.
 ENV ASPNETCORE_URLS=http://+:8080
+
+# Forces the .NET application context engine to evaluate configuration mappings under Production modes (disabling developer exception pages and enabling strict log rules).
 ENV ASPNETCORE_ENVIRONMENT=Production
 
-# FIXED: Tell .NET to use the installed globalization library for SQL queries
+# Instructs the .NET engine to respect complex cultural collations, currency setups, and dataset sorting logic by utilizing the icu-libs package we installed earlier. This prevents crashes when querying SQL databases.
 ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
 
+# Defines the default command to execute when the container starts. It launches the .NET application by invoking the dotnet runtime with the main assembly (ElectionAPI_WB.dll) as an argument. Configures the hard-coded execution instruction vector triggered immediately when your container boots up. It boots your application layer using the .NET runtime host.
 ENTRYPOINT ["dotnet", "ElectionAPI_WB.dll"]
