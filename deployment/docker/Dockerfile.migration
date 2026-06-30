@@ -1,0 +1,33 @@
+# deployment/docker/Dockerfile.migration
+FROM python:3.11-slim
+
+# Prevent interactive prompts during installation blocks
+ENV DEBIAN_FRONTEND=noninteractive
+
+WORKDIR /app
+
+# Install system utilities, curl, gnupg, and compiler libraries
+RUN apt-get update && apt-get install -y \
+    curl \
+    gnupg \
+    gcc \
+    g++ \
+    gupnp-1.2 \
+    unixodbc-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Add Microsoft official package repository metadata keys for SQL Server drivers
+RUN curl -fsSL https://microsoft.com | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg \
+    && curl -fsSL https://microsoft.com > /etc/apt/sources.list.p/mssql-release.list \
+    && apt-get update
+
+# Install the ODBC Driver 18 for SQL Server (accepting the EULA license automatically)
+RUN ACCEPT_EULA=Y apt-get install -y msodbcsql18
+
+# Install required Python ecosystem dependencies inside our isolated worker space
+RUN pip install --no-cache-dir pyodbc boto3 python-dotenv
+
+# Copy your actual migration orchestration logic from the root workspace
+COPY migrate.py .
+
+CMD ["python", "migrate.py"]

@@ -20,11 +20,18 @@ AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 CLUSTER_NAME="electionpulse-wb-eks"
 ECR_FRONTEND="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/electionpulse-wb/frontend"
 ECR_BACKEND="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/electionpulse-wb/backend"
+ECR_MIGRATION="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}://"
 IMAGE_TAG="${IMAGE_TAG:-$(git rev-parse --short HEAD 2>/dev/null || echo 'latest')}"
 TF_DIR="./terraform"
 K8S_DIR="./kubernetes/base"
 FRONTEND_DIR="../election-frontend-wb"
 BACKEND_DIR="../ElectionAPI_WB"
+
+# Database variables extracted from your previous configurations
+DB_USER="admin"
+DB_PASS="${TF_VAR_db_password:-'devops#0028'}"
+DB_NAME="Test_Wasim"
+S3_BUCKET="biryani-bucket-0027"
 
 # ── Colors ─────────────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
@@ -108,6 +115,17 @@ build_images() {
     "${BACKEND_DIR}"
 
   log "Images built successfully"
+
+  # Migration Worker (pyodbc + SQL Server ODBC dependencies)
+  log "Building database migration sandbox..."
+  docker build \
+    -f ./docker/Dockerfile.migration \
+    -t "${ECR_MIGRATION}:${IMAGE_TAG}" \
+    -t "${ECR_MIGRATION}:latest" \
+    ../../
+
+  log "Images built successfully"
+
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -131,6 +149,12 @@ push_images() {
   docker push "${ECR_BACKEND}:${IMAGE_TAG}"
   docker push "${ECR_BACKEND}:latest"
   log "Backend pushed: ${ECR_BACKEND}:${IMAGE_TAG}"
+
+  # Push migration worker
+  docker push "${ECR_MIGRATION}:${IMAGE_TAG}"
+  docker push "${ECR_MIGRATION}:latest"
+  log "Migration worker pushed: ${ECR_MIGRATION}:${IMAGE_TAG}"
+
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -177,6 +201,35 @@ install_alb_controller() {
 
   log "ALB Controller installed"
 }
+
+
+run_db_migration() {
+  section "Executing S3 Native Database Restore via EKS"
+
+  # Fetch the RDS host dynamically from Terraform if it hasn't been set in this run
+  if [ -z "${RDS_ENDPOINT:-}" ]; then
+    cd "${TF_DIR}"
+    RDS_ENDPOINT=$(terraform output -raw rds_endpoint)
+    cd -
+  fi
+
+  # Purge any previous instance of the migration job
+  kubectl delete job rds-data-migration -n election 2>/dev/null || true
+
+  log "Deploying migration task runner onto EKS cluster..."
+  
+  # Inject variables dynamically into the Kubernetes manifest and deploy it
+  export AWS_ACCOUNT_ID AWS_REGION RDS_ENDPOINT DB_USER DB_PASS DB_NAME S3_BUCKET IMAGE_TAG
+  envsubst < "${K8S_DIR}/04-migration-job.yaml" | kubectl apply -f -
+
+  log "Waiting for SQL Server database backup restoration to finish..."
+  if ! kubectl wait --for=condition=complete job/rds-data-migration --timeout=600s -n election; then
+    error "Database migration failed or timed out! Halting application rollout."
+  fi
+
+  log "Database migration and validation loop finished cleanly!"
+}
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # STEP 6: Deploy Kubernetes manifests
