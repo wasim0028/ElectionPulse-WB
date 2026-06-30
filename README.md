@@ -28,7 +28,7 @@
 │  │  │   ASP.NET Core 8       │  │                       │
 │  │  │        │               │  │                       │
 │  │  └────────┼───────────────┘  │                       │
-│  └───────────┼───────────────────┘                      │
+│  └───────────┼──────────────────┘                       │
 │              │                                          │
 │              ▼                                          │
 │  └───────────┼──────────────────┘                       │
@@ -110,6 +110,8 @@ aws dynamodb create-table \
 
 ```bash
 export TF_VAR_db_password="YourStrongPassword123!"
+export AWS_ACCESS_KEY_ID="your_access_key_here"
+export AWS_SECRET_ACCESS_KEY="your_secret_key_here"
 # Never commit passwords to git
 ```
 
