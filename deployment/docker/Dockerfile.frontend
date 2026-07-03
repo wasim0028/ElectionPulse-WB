@@ -1,42 +1,40 @@
 # ── Stage 1: Build ────────────────────────────────────────────────────────────
-# FROM node:20-alpine: Uses official Node.js version 20 as the base image.alpine: Uses a lightweight Linux distribution (Alpine) to keep the image size small.AS builder: Names this stage builder so its compiled outputs can be referenced later
+# FROM node:20-alpine: Uses official Node.js version 20 as the base image. AS builder: Names this stage builder so its compiled outputs can be referenced later.
 FROM node:20-alpine AS builder
 
-# Sets the working directory inside the container to /app.All subsequent commands (COPY, RUN) execute inside this folder.
+# Sets the working directory inside the container to /app. All subsequent commands (COPY, RUN) execute inside this folder.
 WORKDIR /app
 
 # Copy package files first (layer cache)
-COPY package.json package-lock.json* ./
+COPY election-frontend-wb/package.json election-frontend-wb/package-lock.json* ./
 RUN npm ci --silent
 
 # Copy source
-COPY . .
-
-# Executes the production build script defined in package.json.Compiles your source code into optimized, static production files (HTML, CSS, JS), usually saved into a /dist or /build directory.
+COPY election-frontend-wb/. .
+ 
+# Executes the production build script defined in package.json. Compiles your source code into optimized, static production files, usually saved into a /dist directory.
 RUN npm run build
 
 # ── Stage 2: Serve with nginx ──────────────────────────────────────────────────
-
-# FROM nginx:1.25-alpine: Starts a brand new, clean image using Nginx web server version 1.25 on Alpine Linux.AS runner: Names this stage runner. It drops the heavy Node.js environment entirely to maximize security and minimize final image size.
+# FROM nginx:1.25-alpine: Starts a brand new, clean image using Nginx web server version 1.25 on Alpine Linux. AS runner: Drops the heavy Node.js environment entirely.
 FROM nginx:1.25-alpine AS runner
 
-# Remove default nginx config
+# Remove default factory nginx config template
 RUN rm /etc/nginx/conf.d/default.conf
 
-# Copy custom nginx config
-COPY nginx.conf /etc/nginx/conf.d/
-# Copy custom nginx config
-COPY nginx.conf /etc/nginx/conf.d/
+# ── FIXED: MATCHED THE PATH TO YOUR TREE LAYOUT ───────────────────────────────
+COPY deployment/docker/nginx.conf /etc/nginx/conf.d/
 
-# --from=builder: Reaches back into the first stage (builder).Copies the production-ready compiled assets from /app/dist into Nginx's default root directory for serving web content.
+# --from=builder: Reaches back into the first stage (builder). Copies the production-ready compiled assets from /app/dist into Nginx's default root directory.
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-# Defines how Docker monitors the container's live health status.--interval=30s: Checks container health every 30 seconds.--timeout=5s: Aborts the health check if it takes longer than 5 seconds.--start-period=10s: Gives Nginx 10 seconds to fully boot up before running the first check.--retries=3: Considers the container broken if the check fails 3 consecutive times.CMD wget...: Tests health by requesting http://localhost/health. Returns exit code 0 (healthy) or 1 (unhealthy).
+# Defines how Docker monitors the container's live health status. 
+# (Fixed: Swapped from http://localhost/health to http://localhost:8080/health to match your listen directive)
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget -qO- http://localhost/health || exit 1
+  CMD wget -qO- http://localhost:8080/health || exit 1
 
-# Informs Docker that the container listens on network port 80 at runtime. It serves as internal documentation and does not actually publish the port.
-EXPOSE 80
+# Informs Docker that the container listens on network port 8080 at runtime.
+EXPOSE 8080
 
-# CMD: Sets the default primary command that executes when the container starts.nginx: Launches Nginx.-g "daemon off;": Runs Nginx in the foreground instead of the background. This is crucial because Docker monitors the foreground process; if Nginx moves to the background, Docker assumes the container finished and shuts it down.
+# CMD: Sets the default primary command that executes when the container starts. -g "daemon off;" runs Nginx in the foreground so Docker can track it.
 CMD ["nginx", "-g", "daemon off;"]

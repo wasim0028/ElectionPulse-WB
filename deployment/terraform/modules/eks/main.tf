@@ -1,9 +1,3 @@
-# ═══════════════════════════════════════════════════════════════════════════════
-# Module: EKS
-# Creates: Cluster, managed node group, OIDC provider, IAM roles,
-#          aws-load-balancer-controller, cluster-autoscaler
-# ═══════════════════════════════════════════════════════════════════════════════
-
 variable "name"               {}
 variable "environment"        {}
 variable "kubernetes_version" {}
@@ -14,7 +8,7 @@ variable "node_group_config"  {}
 variable "account_id"         {}
 variable "aws_region"         {}
 
-# ── IAM Role for EKS Control Plane ────────────────────────────────────────────
+# ── Cluster Control Plane IAM Setup ───────────────────────────────────────────
 resource "aws_iam_role" "cluster" {
   name = "${var.name}-eks-cluster-role"
 
@@ -38,7 +32,7 @@ resource "aws_iam_role_policy_attachment" "vpc_resource_controller" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSVPCResourceController"
 }
 
-# ── Security Group for Cluster ─────────────────────────────────────────────────
+# ── Control Plane Security Group ──────────────────────────────────────────────
 resource "aws_security_group" "cluster" {
   name        = "${var.name}-eks-cluster-sg"
   description = "EKS cluster security group"
@@ -54,7 +48,7 @@ resource "aws_security_group" "cluster" {
   tags = { Name = "${var.name}-eks-cluster-sg" }
 }
 
-# ── EKS Cluster ───────────────────────────────────────────────────────────────
+# ── EKS Cluster Resource ──────────────────────────────────────────────────────
 resource "aws_eks_cluster" "main" {
   name     = "${var.name}-eks"
   role_arn = aws_iam_role.cluster.arn
@@ -77,7 +71,7 @@ resource "aws_eks_cluster" "main" {
   tags = { Name = "${var.name}-eks" }
 }
 
-# ── OIDC Provider (for IRSA) ───────────────────────────────────────────────────
+# ── OpenID Connect (OIDC) Provider Infrastructure ─────────────────────────────
 data "tls_certificate" "eks" {
   url = aws_eks_cluster.main.identity[0].oidc[0].issuer
 }
@@ -88,7 +82,7 @@ resource "aws_iam_openid_connect_provider" "eks" {
   url             = aws_eks_cluster.main.identity[0].oidc[0].issuer
 }
 
-# ── IAM Role for Node Group ────────────────────────────────────────────────────
+# ── Worker Node IAM Configuration ─────────────────────────────────────────────
 resource "aws_iam_role" "nodes" {
   name = "${var.name}-eks-nodes-role"
 
@@ -117,13 +111,41 @@ resource "aws_iam_role_policy_attachment" "nodes_ecr_policy" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
-# ── FIX: Added AmazonEBSCSIDriverPolicy attachment to prevent 20m hang ─────────
 resource "aws_iam_role_policy_attachment" "nodes_ebs_csi_policy" {
   role       = aws_iam_role.nodes.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
 }
 
-# ── Security Group for Nodes ───────────────────────────────────────────────────
+# ── NEW: Dedicated IAM Role for EBS CSI Driver IRSA (Fixes 20m timeout) ───────
+data "aws_iam_policy_document" "ebs_csi_assume_role_policy" {
+  statement {
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+    effect  = "Allow"
+
+    condition {
+      test     = "StringEquals"
+      variable = "${replace(aws_eks_cluster.main.identity[0].oidc[0].issuer, "https://", "")}:sub"
+      values   = ["system:serviceaccount:kube-system:ebs-csi-controller-sa"]
+    }
+
+    principals {
+      identifiers = [aws_iam_openid_connect_provider.eks.arn]
+      type        = "Federated"
+    }
+  }
+}
+
+resource "aws_iam_role" "ebs_csi_irsa" {
+  name               = "${var.name}-eks-ebs-csi-irsa-role"
+  assume_role_policy = data.aws_iam_policy_document.ebs_csi_assume_role_policy.json
+}
+
+resource "aws_iam_role_policy_attachment" "ebs_csi_irsa_attachment" {
+  role       = aws_iam_role.ebs_csi_irsa.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
+}
+
+# ── Worker Node Security Group ────────────────────────────────────────────────
 resource "aws_security_group" "nodes" {
   name        = "${var.name}-eks-nodes-sg"
   description = "EKS worker node security group"
@@ -153,7 +175,7 @@ resource "aws_security_group" "nodes" {
   tags = { Name = "${var.name}-eks-nodes-sg" }
 }
 
-# ── Managed Node Group ─────────────────────────────────────────────────────────
+# ── Managed EKS Node Group ────────────────────────────────────────────────────
 resource "aws_eks_node_group" "main" {
   cluster_name    = aws_eks_cluster.main.name
   node_group_name = "${var.name}-node-group"
@@ -177,7 +199,7 @@ resource "aws_eks_node_group" "main" {
     aws_iam_role_policy_attachment.nodes_worker_policy,
     aws_iam_role_policy_attachment.nodes_cni_policy,
     aws_iam_role_policy_attachment.nodes_ecr_policy,
-    aws_iam_role_policy_attachment.nodes_ebs_csi_policy, # Ensure policy mounts first
+    aws_iam_role_policy_attachment.nodes_ebs_csi_policy,
   ]
 
   tags = { Name = "${var.name}-node-group" }
@@ -185,7 +207,7 @@ resource "aws_eks_node_group" "main" {
   lifecycle { ignore_changes = [scaling_config[0].desired_size] }
 }
 
-# ── EKS Add-ons (FIXED: Deprecation warning cleaned up) ───────────────────────
+# ── EKS Native Managed Add-Ons ────────────────────────────────────────────────
 resource "aws_eks_addon" "coredns" {
   cluster_name                = aws_eks_cluster.main.name
   addon_name                  = "coredns"
@@ -213,10 +235,11 @@ resource "aws_eks_addon" "ebs_csi" {
   addon_name                  = "aws-ebs-csi-driver"
   resolve_conflicts_on_create = "OVERWRITE"
   resolve_conflicts_on_update = "OVERWRITE"
+  service_account_role_arn    = aws_iam_role.ebs_csi_irsa.arn # <── FIXED: Mounts dedicated OIDC Identity
   depends_on                  = [aws_eks_node_group.main]
 }
 
-# ── Outputs ────────────────────────────────────────────────────────────────────
+# ── Module Infrastructure Outputs ─────────────────────────────────────────────
 output "cluster_name"            { value = aws_eks_cluster.main.name }
 output "cluster_endpoint"        { value = aws_eks_cluster.main.endpoint }
 output "cluster_ca"              { value = aws_eks_cluster.main.certificate_authority[0].data }

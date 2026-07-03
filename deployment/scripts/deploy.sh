@@ -95,38 +95,46 @@ tf_destroy() {
 # ═══════════════════════════════════════════════════════════════════════════════
 # STEP 2: Build Docker images
 # ═══════════════════════════════════════════════════════════════════════════════
+
 build_images() {
   section "Building Docker Images (tag: ${IMAGE_TAG})"
+  
+  # FIXED: Dynamically calculate the absolute path to the true project root
+  # Moving up two folders from the absolute directory of the script file
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+  
+  # Force switch to the true repository root directory
+  cd "${PROJECT_ROOT}"
+  log "Locked context to project root directory: $(pwd)" 
 
   # Frontend
   log "Building frontend..."
   docker build \
-    -f ./docker/Dockerfile.frontend \
+    -f deployment/docker/Dockerfile.frontend \
     -t "${ECR_FRONTEND}:${IMAGE_TAG}" \
     -t "${ECR_FRONTEND}:latest" \
-    "${FRONTEND_DIR}"
+    .
 
   # Backend
   log "Building backend..."
   docker build \
-    -f ./docker/Dockerfile.backend \
+    -f deployment/docker/Dockerfile.backend \
     -t "${ECR_BACKEND}:${IMAGE_TAG}" \
     -t "${ECR_BACKEND}:latest" \
-    "${BACKEND_DIR}"
-
-  log "Images built successfully"
+    .
 
   # Migration Worker (pyodbc + SQL Server ODBC dependencies)
   log "Building database migration sandbox..."
   docker build \
-    -f ./docker/Dockerfile.migration \
+    -f deployment/docker/Dockerfile.migration \
     -t "${ECR_MIGRATION}:${IMAGE_TAG}" \
     -t "${ECR_MIGRATION}:latest" \
-    ../../
+    .
 
   log "Images built successfully"
-
 }
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # STEP 3: Push to ECR
