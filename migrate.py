@@ -1,29 +1,17 @@
-#!/usr/bin/env python3
-# ==============================================================================
-# File: migrate.py
-# Description: Custom EKS Migration Worker orchestrating an AWS RDS Native
-#              SQL Server S3 Backup Restore and Progress Validation loop.
-# ==============================================================================
-
 import os
 import sys
 import time
-import boto3
 import pyodbc
 from dotenv import load_dotenv
 
-# Load variables from local .env file (safely ignored by git)
+# Load variables from local environment or ConfigMap
 load_dotenv()
 
 # --- SETTINGS READ FROM ENVIRONMENT VARIABLES ---
 DB_NAME = os.environ.get("DB_NAME", "Test_Wasim")
-BACKUP_PATH = os.environ.get("BACKUP_PATH")
-
-AWS_REGION = os.environ.get("AWS_REGION", "ap-south-1")
 S3_BUCKET = os.environ.get("S3_BUCKET", "biryani-bucket-0027")
-S3_KEY = f"backups/{DB_NAME}.bak"
 
-# Securely extract database credentials
+# Securely extract database credentials passed by the EKS Job
 DB_SERVER = os.environ.get("DB_SERVER")
 DB_USER = os.environ.get("DB_USER")
 DB_PASS = os.environ.get("DB_PASS")
@@ -33,7 +21,7 @@ if not all([DB_SERVER, DB_USER, DB_PASS]):
     print("❌ CRITICAL: Missing required database configuration values (DB_SERVER, DB_USER, DB_PASS).")
     sys.exit(1)
 
-# Build the connection string safely using f-strings
+# Build the private connection string targeting the internal master system catalog
 RDS_CONN_STR = (
     f"DRIVER={{ODBC Driver 18 for SQL Server}};"
     f"Server={DB_SERVER},1433;"
@@ -42,15 +30,6 @@ RDS_CONN_STR = (
     f"PWD={DB_PASS};"
     f"Encrypt=yes;"
     f"TrustServerCertificate=yes;"
-)
-
-# --- AWS CLIENT SETUP ---
-# Reads keys implicitly from environment variables or local configurations
-s3_client = boto3.client(
-    's3',
-    region_name=AWS_REGION,
-    aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID"),
-    aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY")
 )
 
 
@@ -66,18 +45,10 @@ def execute_query(connection_string, query, fetch=False):
     return result
 
 
-def step_1_upload_to_s3():
-    print(f"[1/3] Uploading local backup file to S3 bucket '{S3_BUCKET}'...")
-    if not BACKUP_PATH or not os.path.exists(BACKUP_PATH):
-        raise FileNotFoundError(f"Could not locate the backup file at: {BACKUP_PATH}")
-        
-    s3_client.upload_file(BACKUP_PATH, S3_BUCKET, S3_KEY)
-    print(f"SUCCESS: Upload complete! File is now in S3: s3://{S3_BUCKET}/{S3_KEY}")
-
-
-def step_2_initiate_rds_restore():
-    print(f"[2/3] Contacting RDS to trigger the native S3 restore process...")
-    s3_arn = f"arn:aws:s3:::{S3_BUCKET}/{S3_KEY}"
+def initiate_rds_restore():
+    print(f"Connecting to RDS and triggering native S3 restore for bucket: '{S3_BUCKET}'...")
+    # Targets your exact .bak file path in the bucket root directory
+    s3_arn = f"arn:aws:s3:::{S3_BUCKET}/Election_WB_2026.bak"
     
     restore_query = f"""
     EXEC msdb.dbo.rds_restore_database
@@ -88,8 +59,8 @@ def step_2_initiate_rds_restore():
     print("SUCCESS: AWS RDS restore task successfully registered.")
 
 
-def step_3_monitor_restore():
-    print("[3/3] Monitoring AWS RDS migration progress loop...")
+def monitor_restore():
+    print("Monitoring AWS RDS migration progress loop...")
     status_query = "EXEC msdb.dbo.rds_task_status;"
     
     while True:
@@ -107,7 +78,6 @@ def step_3_monitor_restore():
             
         target_task = None
         for row in rows:
-            # Safely examine row elements or its absolute string layout 
             if DB_NAME in str(row):
                 target_task = row
                 break
@@ -117,17 +87,16 @@ def step_3_monitor_restore():
             
         if target_task:
             try:
-                # Native rds_task_status returns column index offsets:
-                # 4: % complete, 5: lifecycle status, 6: comments/logs
+                # pyodbc response mapping positions: 4 = % complete, 5 = Status, 6 = Message
                 percent_complete = target_task[4]
-                lifecycle_status = str(target_task[5]).strip()
+                lifecycle_status = str(target_task[5]).strip().upper()
                 comment = target_task[6]
                 print(f"--> Status: {lifecycle_status} | Progress: {percent_complete}% | Logs: {comment}")
                 
                 if lifecycle_status == "SUCCESS":
                     print(f"SUCCESS: Database '{DB_NAME}' has completely migrated to AWS RDS!")
                     break
-                elif lifecycle_status == "ERROR":
+                elif lifecycle_status in ["ERROR", "CANCELLED", "FAIL"]:
                     print(f"ERROR: Migration failed inside AWS environment. Reason: {comment}")
                     sys.exit(1)
             except Exception as parse_ex:
@@ -138,11 +107,8 @@ def step_3_monitor_restore():
 
 if __name__ == "__main__":
     try:
-        # Note: step_1_upload_to_s3() is bypassed if the file already exists on S3.
-        # Uncomment it if you need the worker container to push local assets first.
-        # step_1_upload_to_s3()
-        step_2_initiate_rds_restore()
-        step_3_monitor_restore()
+        initiate_rds_restore()
+        monitor_restore()
     except Exception as e:
         print(f"CRITICAL: Migration Pipeline Aborted: {e}")
         sys.exit(1)

@@ -32,17 +32,17 @@ spec:
       containers:
         - name: frontend
           # ⚠ Replace with your actual ECR URL
-          image: 123456789012.dkr.ecr.ap-south-1.amazonaws.com/electionpulse-wb/frontend:latest
+          image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}://{IMAGE_TAG}
           imagePullPolicy: Always
           ports:
             - name: http
-              containerPort: 80
+              containerPort: 8080
               protocol: TCP
 
           livenessProbe:
             httpGet:
               path: /health
-              port: 80
+              port: 8080
             initialDelaySeconds: 10
             periodSeconds: 15
             failureThreshold: 3
@@ -50,7 +50,7 @@ spec:
           readinessProbe:
             httpGet:
               path: /health
-              port: 80
+              port: 8080
             initialDelaySeconds: 5
             periodSeconds: 10
 
@@ -80,25 +80,21 @@ metadata:
   namespace: election
   labels:
     app: election-frontend
-  annotations:
-    # AWS Load Balancer Controller annotations
-    service.beta.kubernetes.io/aws-load-balancer-type: "external"
-    service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
-    service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: "ip"
+
 spec:
-  type: LoadBalancer
+  # FIXED: Converted to ClusterIP to cooperate with your 03-ingress.yaml AWS Application Load Balancer
+  type: ClusterIP
   selector:
     app: election-frontend
   ports:
     - name: http
-      port: 80
-      targetPort: 80
+      port: 80             # The port other pods/Ingress use inside the cluster
+      targetPort: 8080     # FIXED: Routes traffic to your frontend's container port 8080
       protocol: TCP
     - name: https
-      port: 443
-      targetPort: 80
+      port: 443            # Traffic entering on port 443...
+      targetPort: 8080     # ...is also forwarded to container port 8080
       protocol: TCP
-
 ---
 # ── Frontend HPA ───────────────────────────────────────────────────────────────
 apiVersion: autoscaling/v2

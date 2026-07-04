@@ -1,25 +1,15 @@
-# ── Source Control ──
+# Ignore version control and IDE folders
 .git
 .gitignore
-README.md
-.github
+.vscode
+.idea
+terraform/
+kubernetes/
 
-# ── .NET Backend Ignores ──
-**/bin/
-**/obj/
-**/.vs/
-**/.vscode/
-**/*.user
-**/*.suo
+# DO NOT ignore your source code and configurations!
+# If your .dockerignore has a catch-all (*), you must whitelist these:
+!election-frontend-wb/
+!ElectionAPI_WB/
+!deployment/
+!migrate.py
 
-# ── Node.js Frontend Ignores ──
-**/node_modules/
-**/dist/
-**/build/
-.npm/
-npm-debug.log*
-
-# ── Local Environment Secrets ──
-**/.env
-**/.env.local
-**/.env.*.local

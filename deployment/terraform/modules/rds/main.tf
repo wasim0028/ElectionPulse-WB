@@ -43,7 +43,8 @@ resource "aws_security_group" "rds" {
 
 # ── Parameter Group ────────────────────────────────────────────────────────────
 resource "aws_db_parameter_group" "sqlserver" {
-  family = "sqlserver-se-15.0"
+  # FIXED: Ensured strict alignment with your chosen engine edition family
+  family = var.environment == "prod" ? "sqlserver-se-15.0" : "sqlserver-ex-15.0"
   name   = "${var.name}-sqlserver-params"
 
   tags = { Name = "${var.name}-sqlserver-params" }
@@ -53,7 +54,7 @@ resource "aws_db_parameter_group" "sqlserver" {
 resource "aws_db_option_group" "sqlserver" {
   name                     = "${var.name}-sqlserver-og"
   option_group_description = "Option group for SQL Server backup/restore"
-  engine_name              = "sqlserver-se"
+  engine_name              = var.environment == "prod" ? "sqlserver-se" : "sqlserver-ex"
   major_engine_version     = "15.00"
 
   option {
@@ -108,16 +109,16 @@ data "aws_iam_policy_document" "rds_s3_backup_restore_permissions" {
 resource "aws_db_instance" "main" {
   identifier = "${var.name}-sqlserver"
 
-  engine               = "sqlserver-se"
+  engine               = var.environment == "prod" ? "sqlserver-se" : "sqlserver-ex"
   engine_version       = "15.00.4355.3.v1"
-  instance_class       = var.db_instance_class
+  instance_class       = var.environment == "prod" ? var.db_instance_class : "db.t3.small"
   license_model        = "license-included"
 
   username = var.db_username
   password = var.db_password
 
-  allocated_storage     = 50
-  max_allocated_storage = 200
+  allocated_storage     = 20
+  max_allocated_storage = 50
   storage_type          = "gp3"
   storage_encrypted     = true
 

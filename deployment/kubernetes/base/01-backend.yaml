@@ -26,7 +26,7 @@ spec:
         tier: api
       annotations:
         # Force pod restart on config change
-        checksum/config: "{{ include (print $.Template.BasePath '/00-namespace.yaml') . | sha256sum }}"
+        checksum/config: "${IMAGE_TAG}"
     spec:
       # ── Security context ────────────────────────────────────────────────────
       securityContext:
@@ -38,11 +38,11 @@ spec:
       containers:
         - name: backend
           # ⚠ Replace 123456789.dkr.ecr.ap-south-1.amazonaws.com with your ECR URL
-          image: 123456789012.dkr.ecr.ap-south-1.amazonaws.com/electionpulse-wb/backend:latest
+          image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}://{IMAGE_TAG}
           imagePullPolicy: Always
           ports:
             - name: http
-              containerPort: 8080
+              containerPort: 5080
               protocol: TCP
 
           # ── Environment ────────────────────────────────────────────────────
@@ -57,11 +57,11 @@ spec:
                 configMapKeyRef:
                   name: election-config
                   key: ASPNETCORE_URLS
+
+            # FIXED: Dynamically compiles raw parameters into a structurally valid .NET connection string
             - name: ConnectionStrings__DefaultConnection
-              valueFrom:
-                secretKeyRef:
-                  name: election-db-secret
-                  key: DB_HOST
+              value: "Server=${RDS_ENDPOINT};Database=${DB_NAME};User Id=${DB_USER};Password=${DB_PASS};TrustServerCertificate=True;"
+
               # Full connection string built in env
             - name: DB_HOST
               valueFrom:
@@ -89,7 +89,7 @@ spec:
           livenessProbe:
             httpGet:
               path: /health
-              port: 8080
+              port: 5080
             initialDelaySeconds: 30
             periodSeconds: 15
             failureThreshold: 3
@@ -97,7 +97,7 @@ spec:
           readinessProbe:
             httpGet:
               path: /health
-              port: 8080
+              port: 5080
             initialDelaySeconds: 10
             periodSeconds: 10
             failureThreshold: 3
@@ -105,7 +105,7 @@ spec:
           startupProbe:
             httpGet:
               path: /health
-              port: 8080
+              port: 5080
             failureThreshold: 30
             periodSeconds: 5
 
@@ -142,8 +142,8 @@ spec:
     app: election-backend
   ports:
     - name: http
-      port: 8080
-      targetPort: 8080
+      port: 5080
+      targetPort: 5080
       protocol: TCP
 
 ---

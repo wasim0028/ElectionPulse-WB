@@ -19,7 +19,7 @@ data:
   ASPNETCORE_URLS: "http://+:8080"
   # DB host is injected from Secret; only non-sensitive config here
   DB_PORT: "1433"
-  DB_NAME: "ElectionWB"
+  DB_NAME: "${DB_NAME}"
 
 ---
 # ── Secret — database credentials (base64 encoded) ───────────────────────────
@@ -37,6 +37,6 @@ metadata:
 type: Opaque
 stringData:
   # ⚠ Replace with actual RDS endpoint after terraform apply
-  DB_HOST: "electionpulse-wb-sqlserver.xxxxxxx.ap-south-1.rds.amazonaws.com"
-  DB_USER: "sa"
-  DB_PASS: "REPLACE_WITH_ACTUAL_PASSWORD"
+  DB_HOST: "${RDS_ENDPOINT}"
+  DB_USER: "${DB_USER}"
+  DB_PASS: "${DB_PASS}"

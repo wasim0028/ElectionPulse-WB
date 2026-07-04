@@ -79,6 +79,7 @@ resource "aws_route_table" "public" {
     cidr_block = "0.0.0.0/0"
     gateway_id = aws_internet_gateway.main.id
   }
+  depends_on = [aws_internet_gateway.main]
   tags = { Name = "${var.name}-rt-public" }
 }
 

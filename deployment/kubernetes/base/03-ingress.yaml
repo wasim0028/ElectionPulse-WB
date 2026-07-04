@@ -17,7 +17,7 @@ metadata:
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
     alb.ingress.kubernetes.io/ssl-redirect: "443"
     # ⚠ Replace with your ACM certificate ARN
-    alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:ap-south-1:123456789012:certificate/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+    alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:ap-south-1:${AWS_ACCOUNT_ID}:certificate/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 
     # Health check
     alb.ingress.kubernetes.io/healthcheck-path: "/health"
@@ -35,8 +35,7 @@ metadata:
 spec:
   rules:
     # ⚠ Replace with your actual domain
-    - host: electionpulse.yourdomain.com
-      http:
+    - http:
         paths:
           # All traffic → frontend (nginx handles /api proxy internally)
           - path: /
@@ -71,7 +70,7 @@ spec:
             matchLabels:
               app: election-frontend
       ports:
-        - port: 8080
+        - port: 5080
 
   egress:
     # Allow all outbound (DNS, RDS, ECR pull)
