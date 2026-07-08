@@ -11,15 +11,14 @@ ECR_MIGRATION="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/electionpul
 
 IMAGE_TAG="${IMAGE_TAG:-$(git rev-parse --short HEAD 2>/dev/null || echo 'latest')}"
 TF_DIR="./terraform"
-K8S_DIR="./kubernetes/base"
-K8S_DIR="./kubernetes/base"
+K8S_DIR="/home/ubuntu/ElectionPulse-WB/deployment/kubernetes/base"
 FRONTEND_DIR="../election-frontend-wb"
 BACKEND_DIR="../ElectionAPI_WB"
 
 # Database variables extracted from your configurations
-DB_USER="admin"
-DB_PASS="${TF_VAR_db_password:-'devops#0028'}"
-DB_NAME="Test_Wasim"
+DB_USER="sa"
+DB_PASS="${TF_VAR_db_password}"
+DB_NAME="ElectionDB"
 S3_BUCKET="biryani-bucket-0027"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
@@ -140,20 +139,25 @@ setup_kubectl() {
   log "kubectl configured"
 }
 
+
 install_alb_controller() {
   section "Installing AWS Load Balancer Controller"
 
-  helm repo add eks https://github.io
+  # Add EKS Helm repo
+  helm repo add eks https://aws.github.io/eks-charts
   helm repo update
 
+  # Download IAM policy
   curl -fsSL \
-    https://githubusercontent.com \
+    https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/main/docs/install/iam_policy.json \
     -o /tmp/alb-iam-policy.json
 
+  # Create IAM policy (ignore if exists)
   aws iam create-policy \
     --policy-name AWSLoadBalancerControllerIAMPolicy \
     --policy-document file:///tmp/alb-iam-policy.json 2>/dev/null || true
 
+  # Install controller
   helm upgrade --install aws-load-balancer-controller \
     eks/aws-load-balancer-controller \
     --namespace kube-system \
@@ -166,6 +170,7 @@ install_alb_controller() {
   log "ALB Controller installed"
 }
 
+
 run_db_migration() {
   section "Executing S3 Native Database Restore via EKS"
 
@@ -173,25 +178,37 @@ run_db_migration() {
     cd "${TF_DIR}"
     RAW_ENDPOINT=$(terraform output -raw endpoint)
     export RDS_ENDPOINT=$(echo "${RAW_ENDPOINT}" | cut -d':' -f1)
-    cd -
+    cd - > /dev/null
   fi
 
   log "Configuring namespace and database configuration dependencies..."
+  # Explicitly export everything envsubst needs
   export AWS_ACCOUNT_ID AWS_REGION RDS_ENDPOINT DB_USER DB_PASS DB_NAME S3_BUCKET IMAGE_TAG ECR_MIGRATION
+  
   envsubst < "${K8S_DIR}/00-namespace.yaml" | kubectl apply -f -
 
-  kubectl delete job rds-data-migration -n election 2>/dev/null || true
+  log "Cleaning up old migration runs..."
+  kubectl delete job rds-data-migration -n election --ignore-not-found=true
 
   log "Deploying migration task runner onto EKS cluster..."
-  envsubst < "${K8S_DIR}/04-migration-job.yaml" | kubectl apply -f -
+  
+  # Catch any hidden validation or parsing errors during deployment
+  if ! envsubst < "${K8S_DIR}/04-migration-job.yaml" | kubectl apply -f -; then
+    error "Kubernetes rejected the generated 04-migration-job.yaml file! Check variable substitutions."
+  fi
 
   log "Waiting for SQL Server database backup restoration to finish..."
+  # Bumped timeout to 600s since SQL Server S3 native restore operations are slow
   if ! kubectl wait --for=condition=complete job/rds-data-migration --timeout=600s -n election; then
+    warn "Job did not complete cleanly or timed out. Fetching pod logs before failure handling..."
+    kubectl describe job rds-data-migration -n election || true
+    kubectl logs -n election -l job-name=rds-data-migration --tail=100 || true
     error "Database migration failed or timed out! Halting application rollout."
   fi
 
   log "Database migration and validation loop finished cleanly!"
 }
+
 
 deploy_k8s() {
   section "Deploying to Kubernetes"

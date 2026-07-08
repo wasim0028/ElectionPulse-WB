@@ -103,6 +103,8 @@ module "eks" {
   node_group_config = var.node_group_config
   account_id        = local.account_id
   aws_region        = var.aws_region
+  # NEW LINK: Feeds the RDS Security Group ID into the EKS module for the return handshake rule
+ # rds_security_group_id = module.rds.security_group
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -122,6 +124,19 @@ module "rds" {
   db_password        = var.db_password
   db_name            = var.db_name
 }
+
+
+# ── THE BRIDGE RULE: Connects EKS & RDS after both are cleanly created ──────────
+resource "aws_security_group_rule" "rds_to_eks_nodes_handshake" {
+  type                     = "ingress"
+  description              = "Allow return network handshakes from RDS SQL Server"
+  from_port                = 1024
+  to_port                  = 65535
+  protocol                 = "tcp"
+  security_group_id        = module.eks.node_security_group_id  # Destination: EKS SG
+  source_security_group_id = module.rds.security_group          # Source: RDS SG
+}
+
 
 # ── Outputs ────────────────────────────────────────────────────────────────────
 output "eks_cluster_name"     { value = module.eks.cluster_name }

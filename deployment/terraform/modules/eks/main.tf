@@ -8,6 +8,13 @@ variable "node_group_config"  {}
 variable "account_id"         {}
 variable "aws_region"         {}
 
+# NEW VARIABLE: Required to link the RDS return traffic rule safely
+#variable "rds_security_group_id" {
+#  type        = string
+#  description = "The security group ID of the RDS SQL Server instance"
+#}
+
+
 # ── Cluster Control Plane IAM Setup ───────────────────────────────────────────
 resource "aws_iam_role" "cluster" {
   name = "${var.name}-eks-cluster-role"
@@ -238,6 +245,19 @@ resource "aws_eks_addon" "ebs_csi" {
   service_account_role_arn    = aws_iam_role.ebs_csi_irsa.arn # <── FIXED: Mounts dedicated OIDC Identity
   depends_on                  = [aws_eks_node_group.main]
 }
+
+# ── NEW: Inbound Firewall Modification Rule ────────────────────────────────────
+# Allows the RDS database engine instance to send verification tokens and data 
+# handshakes back to your listening worker nodes on dynamic ephemeral channels.
+#resource "aws_security_group_rule" "rds_to_eks_nodes_handshake" {
+#  type                     = "ingress"
+#  description              = "Allow return network handshakes from RDS SQL Server"
+#  from_port                = 1024
+#  to_port                  = 65535
+#  protocol                 = "tcp"
+#  security_group_id        = aws_security_group.nodes.id
+#  source_security_group_id = var.rds_security_group_id
+#}
 
 # ── Module Infrastructure Outputs ─────────────────────────────────────────────
 output "cluster_name"            { value = aws_eks_cluster.main.name }

@@ -139,7 +139,7 @@ resource "aws_db_instance" "main" {
   backup_window           = "03:00-04:00"
   maintenance_window      = "Mon:04:00-Mon:05:00"
 
-  publicly_accessible    = true
+  publicly_accessible    = false
 
   performance_insights_enabled = false
   monitoring_interval          = 0

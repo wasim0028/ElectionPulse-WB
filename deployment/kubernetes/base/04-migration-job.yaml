@@ -4,13 +4,12 @@ metadata:
   name: rds-data-migration
   namespace: election
 spec:
-  ttlSecondsAfterFinished: 100
+  backoffLimit: 1
   template:
     spec:
       containers:
       - name: migration-worker
-        # FIXED: Resolved malformed URL paths and missing variable tokens
-        image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}://{IMAGE_TAG}
+        image: ${ECR_MIGRATION}:${IMAGE_TAG}
         env:
         - name: DB_SERVER
           value: "${RDS_ENDPOINT}"
@@ -37,5 +36,3 @@ spec:
               key: secret-access-key
               optional: true
       restartPolicy: Never
-  backoffLimit: 1
-

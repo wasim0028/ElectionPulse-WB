@@ -15,9 +15,9 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Add Microsoft official package repository metadata keys for SQL Server drivers
-# FIXED: Points to the authentic cryptographic package key and Debian 12 package architecture URL
-RUN curl -fsSL https://microsoft.com | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg \
-    && curl -fsSL https://microsoft.com > /etc/apt/sources.list.d/mssql-release.list \
+# FIXED: Targets packages.microsoft.com and sets up signed-by mapping for Debian 12
+RUN curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg \
+    && curl -fsSL https://packages.microsoft.com/config/debian/12/prod.list | sed 's|\]| signed-by=/usr/share/keyrings/microsoft-prod.gpg\]|' > /etc/apt/sources.list.d/mssql-release.list \
     && apt-get update
 
 # Install the ODBC Driver 18 for SQL Server (accepting the EULA license automatically)
