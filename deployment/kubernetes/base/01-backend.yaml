@@ -37,8 +37,13 @@ spec:
       # ── Containers ──────────────────────────────────────────────────────────
       containers:
         - name: backend
-          # ⚠ Replace 123456789.dkr.ecr.ap-south-1.amazonaws.com with your ECR URL
-          image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}://{IMAGE_TAG}
+          # FIXED: was "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}://{IMAGE_TAG}" —
+          # missing ".amazonaws.com/electionpulse-wb/backend" repo path entirely,
+          # and had a stray "//" plus a missing "$" before "{IMAGE_TAG}". This
+          # produced an invalid image reference (e.g. "123456789012.dkr.ecr.
+          # ap-south-1://{IMAGE_TAG}"), causing ErrImagePull/InvalidImageName on
+          # every pod — which is why the rollout never reached Ready and timed out.
+          image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/electionpulse-wb/backend:${IMAGE_TAG}
           imagePullPolicy: Always
           ports:
             - name: http

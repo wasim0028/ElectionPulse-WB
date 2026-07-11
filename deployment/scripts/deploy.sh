@@ -10,7 +10,7 @@ ECR_BACKEND="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/electionpulse
 ECR_MIGRATION="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/electionpulse-wb/migration"
 
 IMAGE_TAG="${IMAGE_TAG:-$(git rev-parse --short HEAD 2>/dev/null || echo 'latest')}"
-TF_DIR="./terraform"
+TF_DIR="/home/ubuntu/ElectionPulse-WB/deployment/terraform"
 K8S_DIR="/home/ubuntu/ElectionPulse-WB/deployment/kubernetes/base"
 FRONTEND_DIR="../election-frontend-wb"
 BACKEND_DIR="../ElectionAPI_WB"
@@ -140,35 +140,54 @@ setup_kubectl() {
 }
 
 
+
 install_alb_controller() {
   section "Installing AWS Load Balancer Controller"
+
+  # FIXED: Previously this function created the IAM policy imperatively via
+  # `aws iam create-policy` but never created an IAM role or wired it to the
+  # controller's service account. That left the ALB controller pod running
+  # under the EC2 node's own IAM role (no ELB permissions), causing
+  # "AccessDenied: ... elasticloadbalancing:DescribeLoadBalancers" on every
+  # Ingress reconciliation and an Ingress that never got an ADDRESS.
+  #
+  # The IAM role + policy are now managed by Terraform (see modules/eks/main.tf,
+  # aws_iam_role.alb_controller_irsa) using the standard IRSA/OIDC pattern.
+  # Here we just fetch that role's ARN and annotate the service account with it.
+
+  ALB_CONTROLLER_ROLE_ARN=$(cd "${TF_DIR}" && terraform output -raw alb_controller_role_arn && cd - > /dev/null)
+
+  if [ -z "${ALB_CONTROLLER_ROLE_ARN}" ]; then
+    error "Could not read alb_controller_role_arn from Terraform output. Run 'terraform apply' first."
+  fi
+  log "Using ALB Controller IAM role: ${ALB_CONTROLLER_ROLE_ARN}"
 
   # Add EKS Helm repo
   helm repo add eks https://aws.github.io/eks-charts
   helm repo update
 
-  # Download IAM policy
-  curl -fsSL \
-    https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/main/docs/install/iam_policy.json \
-    -o /tmp/alb-iam-policy.json
-
-  # Create IAM policy (ignore if exists)
-  aws iam create-policy \
-    --policy-name AWSLoadBalancerControllerIAMPolicy \
-    --policy-document file:///tmp/alb-iam-policy.json 2>/dev/null || true
-
-  # Install controller
+  # Install controller, creating the service account with the IRSA annotation
+  # so pods actually assume alb_controller_irsa instead of falling back to
+  # the node's IAM role.
   helm upgrade --install aws-load-balancer-controller \
     eks/aws-load-balancer-controller \
     --namespace kube-system \
     --set clusterName="${CLUSTER_NAME}" \
     --set serviceAccount.create=true \
+    --set serviceAccount.name=aws-load-balancer-controller \
+    --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"="${ALB_CONTROLLER_ROLE_ARN}" \
     --set region="${AWS_REGION}" \
     --set vpcId="$(aws eks describe-cluster --name ${CLUSTER_NAME} \
                    --query 'cluster.resourcesVpcConfig.vpcId' --output text)"
 
-  log "ALB Controller installed"
+  log "ALB Controller installed with IRSA role attached"
+
+  log "Restarting controller pods to pick up the new service account token..."
+  kubectl rollout restart deployment/aws-load-balancer-controller -n kube-system
+  kubectl rollout status deployment/aws-load-balancer-controller -n kube-system --timeout=2m
 }
+
+
 
 
 run_db_migration() {

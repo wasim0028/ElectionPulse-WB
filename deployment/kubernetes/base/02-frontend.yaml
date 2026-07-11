@@ -26,13 +26,22 @@ spec:
         tier: web
     spec:
       securityContext:
-        runAsNonRoot: false    # nginx needs port 80
+        # FIXED: was "runAsNonRoot: false" — needed previously because nginx's
+        # master process started as root to chown cache dirs before dropping
+        # to uid 101. The image now pre-chowns everything at build time and
+        # declares "USER 101" directly, so the pod can enforce non-root now.
+        runAsNonRoot: true
+        runAsUser: 101
         fsGroup: 101
 
       containers:
         - name: frontend
-          # ⚠ Replace with your actual ECR URL
-          image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}://{IMAGE_TAG}
+          # FIXED: was "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}://{IMAGE_TAG}" —
+          # same copy-paste bug as 01-backend.yaml. Missing
+          # ".amazonaws.com/electionpulse-wb/frontend" repo path, and had a
+          # stray "//" plus missing "$" before "{IMAGE_TAG}", producing an
+          # InvalidImageName error confirmed via kubectl describe pod.
+          image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/electionpulse-wb/frontend:${IMAGE_TAG}
           imagePullPolicy: Always
           ports:
             - name: http
@@ -66,7 +75,11 @@ spec:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
-              add:  ["NET_BIND_SERVICE"]
+              # NOTE: no additions needed anymore. The image now runs as
+              # uid 101 with all cache/log directories pre-chowned at build
+              # time (see Dockerfile.frontend), so nginx never needs CHOWN,
+              # SETUID, or SETGID at runtime. NET_BIND_SERVICE isn't needed
+              # either since 8080 is an unprivileged port (>1024).
 
       restartPolicy: Always
       terminationGracePeriodSeconds: 15

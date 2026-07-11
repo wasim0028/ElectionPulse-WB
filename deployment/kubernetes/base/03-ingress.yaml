@@ -1,6 +1,17 @@
 # ═══════════════════════════════════════════════════════════════════════════════
-# Ingress — AWS Application Load Balancer
+# Ingress — AWS Application Load Balancer (TEMPORARY: HTTP-only)
 # Requires: aws-load-balancer-controller installed in cluster
+#
+# NOTE: This is a stripped-down, HTTP-only version for initial verification.
+# The original had:
+#   alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
+#   alb.ingress.kubernetes.io/ssl-redirect: "443"
+#   alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:...:xxxxxxxx-..."
+# The certificate-arn was a placeholder pointing at a non-existent ACM cert,
+# which would cause the controller to fail attaching the HTTPS listener
+# (CertificateNotFound). Once you have a real domain + ACM certificate issued
+# for it, restore the HTTPS block below (commented at the bottom) and remove
+# the HTTP-only listen-ports line.
 # ═══════════════════════════════════════════════════════════════════════════════
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -8,16 +19,12 @@ metadata:
   name: election-ingress
   namespace: election
   annotations:
-    # AWS ALB Controller
     kubernetes.io/ingress.class: alb
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
 
-    # HTTPS / TLS
-    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
-    alb.ingress.kubernetes.io/ssl-redirect: "443"
-    # ⚠ Replace with your ACM certificate ARN
-    alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:ap-south-1:${AWS_ACCOUNT_ID}:certificate/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+    # TEMPORARY: HTTP only, no TLS listener until a real ACM cert exists
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
 
     # Health check
     alb.ingress.kubernetes.io/healthcheck-path: "/health"
@@ -34,7 +41,7 @@ metadata:
 
 spec:
   rules:
-    # ⚠ Replace with your actual domain
+    # ⚠ Replace with your actual domain once you have one
     - http:
         paths:
           # All traffic → frontend (nginx handles /api proxy internally)
@@ -45,6 +52,12 @@ spec:
                 name: election-frontend-svc
                 port:
                   number: 80
+
+# ── RESTORE THIS ONCE YOU HAVE A REAL ACM CERTIFICATE ─────────────────────────
+# metadata.annotations additions:
+#   alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
+#   alb.ingress.kubernetes.io/ssl-redirect: "443"
+#   alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:ap-south-1:${AWS_ACCOUNT_ID}:certificate/<real-cert-id>"
 
 ---
 # ── NetworkPolicy — restrict inter-pod traffic ─────────────────────────────────
@@ -62,7 +75,7 @@ spec:
   ingress:
     # Allow ingress to frontend from ALB (any source for now)
     - ports:
-        - port: 80
+        - port: 8080
 
     # Allow ingress to backend ONLY from frontend pods
     - from:

@@ -16,7 +16,7 @@ metadata:
   namespace: election
 data:
   ASPNETCORE_ENVIRONMENT: "Production"
-  ASPNETCORE_URLS: "http://+:8080"
+  ASPNETCORE_URLS: "http://+:5080"
   # DB host is injected from Secret; only non-sensitive config here
   DB_PORT: "1433"
   DB_NAME: "${DB_NAME}"
