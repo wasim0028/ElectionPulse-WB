@@ -11,6 +11,12 @@ load_dotenv()
 DB_NAME = os.environ.get("DB_NAME", "Test_Wasim")
 S3_BUCKET = os.environ.get("S3_BUCKET", "biryani-bucket-0027")
 
+# NEW: The backup file's key (path inside the bucket) is now configurable
+# instead of hardcoded, since it previously pointed at the wrong file
+# ("Election_WB_2026.bak" at the bucket root) when the real object lives at
+# "backups/Test_Wasim.bak". Defaults to the confirmed-correct path.
+BACKUP_S3_KEY = os.environ.get("BACKUP_S3_KEY", "backups/Test_Wasim.bak")
+
 # Securely extract database credentials passed by the EKS Job
 DB_SERVER = os.environ.get("DB_SERVER")
 DB_USER = os.environ.get("DB_USER")
@@ -47,9 +53,11 @@ def execute_query(connection_string, query, fetch=False):
 
 def initiate_rds_restore():
     print(f"Connecting to RDS and triggering native S3 restore for bucket: '{S3_BUCKET}'...")
-    # Targets your exact .bak file path in the bucket root directory
-    s3_arn = f"arn:aws:s3:::{S3_BUCKET}/Election_WB_2026.bak"
-    
+    # FIXED: Was hardcoded to "Election_WB_2026.bak" at the bucket root, which
+    # doesn't exist. The confirmed object lives at "backups/Test_Wasim.bak".
+    s3_arn = f"arn:aws:s3:::{S3_BUCKET}/{BACKUP_S3_KEY}"
+    print(f"Target backup object: {s3_arn}")
+
     restore_query = f"""
     EXEC msdb.dbo.rds_restore_database
         @restore_db_name='{DB_NAME}',
@@ -62,7 +70,7 @@ def initiate_rds_restore():
 def monitor_restore():
     print("Monitoring AWS RDS migration progress loop...")
     status_query = "EXEC msdb.dbo.rds_task_status;"
-    
+
     while True:
         try:
             rows = execute_query(RDS_CONN_STR, status_query, fetch=True)
@@ -75,16 +83,16 @@ def monitor_restore():
             print("Waiting for task list to populate...")
             time.sleep(10)
             continue
-            
+
         target_task = None
         for row in rows:
             if DB_NAME in str(row):
                 target_task = row
                 break
-                
+
         if not target_task:
             target_task = rows[0] if rows else None
-            
+
         if target_task:
             try:
                 # pyodbc response mapping positions: 4 = % complete, 5 = Status, 6 = Message
@@ -92,7 +100,7 @@ def monitor_restore():
                 lifecycle_status = str(target_task[5]).strip().upper()
                 comment = target_task[6]
                 print(f"--> Status: {lifecycle_status} | Progress: {percent_complete}% | Logs: {comment}")
-                
+
                 if lifecycle_status == "SUCCESS":
                     print(f"SUCCESS: Database '{DB_NAME}' has completely migrated to AWS RDS!")
                     break
@@ -101,7 +109,7 @@ def monitor_restore():
                     sys.exit(1)
             except Exception as parse_ex:
                 print(f"--> Status Update Parsing Note: {target_task} | Details: {parse_ex}")
-                
+
         time.sleep(20)
 
 
@@ -112,3 +120,4 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"CRITICAL: Migration Pipeline Aborted: {e}")
         sys.exit(1)
+
