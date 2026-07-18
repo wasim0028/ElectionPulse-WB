@@ -1,0 +1,84 @@
+# .github/workflows/terraform.yml
+#
+# Kept as a SEPARATE workflow from ci-cd.yml on purpose — infrastructure
+# changes (a new node group size, a security group rule, an RDS parameter)
+# are a different risk category than an application image bump, and
+# deserve a human looking at the plan before it applies. This mirrors the
+# separation you already have in deploy.sh between `tf_apply` and `deploy`.
+
+name: Terraform
+
+on:
+  pull_request:
+    paths:
+      - "deployment/terraform/**"
+  push:
+    branches: [main]
+    paths:
+      - "deployment/terraform/**"
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write   # lets the plan get posted as a PR comment
+
+env:
+  AWS_REGION: ap-south-1
+  TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
+
+jobs:
+  plan:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: deployment/terraform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_TERRAFORM_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - run: terraform init
+      - run: terraform plan -no-color -out=tfplan
+      - run: terraform show -no-color tfplan > plan.txt
+
+      - name: Post plan as PR comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const plan = fs.readFileSync('deployment/terraform/plan.txt', 'utf8');
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: "```\n" + plan.slice(0, 60000) + "\n```"
+            });
+
+  apply:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # Requires a GitHub Environment named "production" with required
+    # reviewers configured — this is the manual approval gate, replacing
+    # the interactive `terraform apply` you'd run by hand today.
+    environment: production
+    defaults:
+      run:
+        working-directory: deployment/terraform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_TERRAFORM_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - run: terraform init
+      - run: terraform apply -auto-approve

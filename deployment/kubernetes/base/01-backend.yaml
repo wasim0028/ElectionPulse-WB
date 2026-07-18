@@ -1,6 +1,3 @@
-# ═══════════════════════════════════════════════════════════════════════════════
-# Backend — ASP.NET Core 8 API
-# ═══════════════════════════════════════════════════════════════════════════════
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -18,39 +15,37 @@ spec:
     type: RollingUpdate
     rollingUpdate:
       maxSurge: 1
-      maxUnavailable: 0        # zero-downtime deploy
+      maxUnavailable: 0
   template:
     metadata:
       labels:
         app: election-backend
         tier: api
-      annotations:
-        # Force pod restart on config change
-        checksum/config: "${IMAGE_TAG}"
+      # FIXED: removed `checksum/config: "${IMAGE_TAG}"` — that annotation
+      # existed to force a pod restart when envsubst changed the image tag.
+      # Under Kustomize, changing the `images:` transformer's newTag already
+      # changes the Deployment's pod template spec directly, which triggers
+      # a rollout on its own. No annotation needed, and no bash var to
+      # resolve here either.
     spec:
-      # ── Security context ────────────────────────────────────────────────────
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
         fsGroup: 2000
 
-      # ── Containers ──────────────────────────────────────────────────────────
       containers:
         - name: backend
-          # FIXED: was "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}://{IMAGE_TAG}" —
-          # missing ".amazonaws.com/electionpulse-wb/backend" repo path entirely,
-          # and had a stray "//" plus a missing "$" before "{IMAGE_TAG}". This
-          # produced an invalid image reference (e.g. "123456789012.dkr.ecr.
-          # ap-south-1://{IMAGE_TAG}"), causing ErrImagePull/InvalidImageName on
-          # every pod — which is why the rollout never reached Ready and timed out.
-          image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/electionpulse-wb/backend:${IMAGE_TAG}
+          # FIXED: was "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}://{IMAGE_TAG}"
+          # (broken bash interpolation). Now a placeholder name that the
+          # Kustomize `images:` transformer in kustomization.yaml rewrites
+          # into the full, correct ECR reference at render time.
+          image: BACKEND_IMAGE_PLACEHOLDER
           imagePullPolicy: Always
           ports:
             - name: http
               containerPort: 5080
               protocol: TCP
 
-          # ── Environment ────────────────────────────────────────────────────
           env:
             - name: ASPNETCORE_ENVIRONMENT
               valueFrom:
@@ -63,11 +58,9 @@ spec:
                   name: election-config
                   key: ASPNETCORE_URLS
 
-            # FIXED: Dynamically compiles raw parameters into a structurally valid .NET connection string
-            - name: ConnectionStrings__DefaultConnection
-              value: "Server=${RDS_ENDPOINT};Database=${DB_NAME};User Id=${DB_USER};Password=${DB_PASS};TrustServerCertificate=True;"
-
-              # Full connection string built in env
+            # These three must come from the Secret created out-of-band
+            # (see 00-namespace.yaml) or from the ExternalSecret — never
+            # plaintext here.
             - name: DB_HOST
               valueFrom:
                 secretKeyRef:
@@ -83,14 +76,23 @@ spec:
                 secretKeyRef:
                   name: election-db-secret
                   key: DB_PASS
+            - name: DB_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: election-config
+                  key: DB_NAME
 
-          # ── Connection string as single env var ────────────────────────────
-          # (override the ConfigMap version with the full string)
-          envFrom:
-            - configMapRef:
-                name: election-config
+            # FIXED: was a bash-interpolated literal string built from
+            # ${RDS_ENDPOINT}/${DB_USER}/${DB_PASS}/${DB_NAME} via envsubst.
+            # This now uses Kubernetes' OWN native env-var expansion —
+            # $(VAR_NAME) syntax, resolved by the kubelet itself, no shell
+            # involved at all. Works identically whether applied by
+            # `kubectl apply`, `kustomize build | kubectl apply`, or ArgoCD's
+            # sync loop. Requirement: DB_HOST/DB_USER/DB_PASS/DB_NAME must be
+            # defined earlier in this same env list, which they are.
+            - name: ConnectionStrings__DefaultConnection
+              value: "Server=$(DB_HOST);Database=$(DB_NAME);User Id=$(DB_USER);Password=$(DB_PASS);TrustServerCertificate=True;"
 
-          # ── Probes ─────────────────────────────────────────────────────────
           livenessProbe:
             httpGet:
               path: /health
@@ -114,7 +116,6 @@ spec:
             failureThreshold: 30
             periodSeconds: 5
 
-          # ── Resources ──────────────────────────────────────────────────────
           resources:
             requests:
               cpu:    "250m"
@@ -133,7 +134,6 @@ spec:
       terminationGracePeriodSeconds: 30
 
 ---
-# ── Backend Service ────────────────────────────────────────────────────────────
 apiVersion: v1
 kind: Service
 metadata:
@@ -142,7 +142,7 @@ metadata:
   labels:
     app: election-backend
 spec:
-  type: ClusterIP      # internal only; exposed via frontend nginx proxy
+  type: ClusterIP
   selector:
     app: election-backend
   ports:
@@ -152,7 +152,6 @@ spec:
       protocol: TCP
 
 ---
-# ── HorizontalPodAutoscaler ────────────────────────────────────────────────────
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:

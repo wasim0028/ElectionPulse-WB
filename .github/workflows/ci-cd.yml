@@ -1,0 +1,127 @@
+# .github/workflows/ci-cd.yml
+#
+# Replaces the manual portions of deploy.sh: build, push, migrate, and
+# (if you haven't moved to ArgoCD yet) apply. Once the ArgoCD setup above is
+# live, the final "commit new image tag" step is what actually triggers a
+# deployment — ArgoCD's sync loop takes it from there, so this workflow
+# never runs `kubectl apply` against the cluster directly.
+#
+# SECURITY NOTE: this uses GitHub's OIDC provider to assume an AWS IAM role
+# instead of long-lived AWS_ACCESS_KEY_ID/SECRET_ACCESS_KEY secrets — same
+# IRSA-style federation pattern used for the ALB controller and EBS CSI
+# driver in your Terraform. No static credentials stored in GitHub at all.
+
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ElectionAPI_WB/**"
+      - "election-frontend-wb/**"
+      - "deployment/docker/**"
+      - "deployment/kubernetes/**"
+  workflow_dispatch: {}   # allows manual "Run workflow" from the Actions tab
+
+permissions:
+  id-token: write   # required for OIDC -> AWS role assumption
+  contents: write   # required to commit the updated image tag back to git
+
+env:
+  AWS_REGION: ap-south-1
+  ECR_REGISTRY: 326334468168.dkr.ecr.ap-south-1.amazonaws.com
+  EKS_CLUSTER: electionpulse-wb-eks
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.vars.outputs.image_tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set image tag from commit SHA
+        id: vars
+        run: echo "image_tag=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ECR_PUSH_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deployment/docker/Dockerfile.frontend
+          push: true
+          tags: |
+            ${{ env.ECR_REGISTRY }}/electionpulse-wb/frontend:${{ steps.vars.outputs.image_tag }}
+            ${{ env.ECR_REGISTRY }}/electionpulse-wb/frontend:latest
+
+      - name: Build and push backend
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deployment/docker/Dockerfile.backend
+          push: true
+          tags: |
+            ${{ env.ECR_REGISTRY }}/electionpulse-wb/backend:${{ steps.vars.outputs.image_tag }}
+            ${{ env.ECR_REGISTRY }}/electionpulse-wb/backend:latest
+
+      - name: Build and push migration worker
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deployment/docker/Dockerfile.migration
+          push: true
+          tags: |
+            ${{ env.ECR_REGISTRY }}/electionpulse-wb/migration:${{ steps.vars.outputs.image_tag }}
+            ${{ env.ECR_REGISTRY }}/electionpulse-wb/migration:latest
+
+  update-gitops-manifests:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install kustomize
+        run: |
+          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+          sudo mv kustomize /usr/local/bin/
+
+      - name: Bump image tags in kustomization.yaml
+        working-directory: deployment/kubernetes/base
+        run: |
+          kustomize edit set image \
+            BACKEND_IMAGE_PLACEHOLDER=${{ env.ECR_REGISTRY }}/electionpulse-wb/backend:${{ needs.build-and-push.outputs.image_tag }} \
+            FRONTEND_IMAGE_PLACEHOLDER=${{ env.ECR_REGISTRY }}/electionpulse-wb/frontend:${{ needs.build-and-push.outputs.image_tag }}
+
+      # Also bump the migration Job's image reference the same way, since
+      # it's a PreSync hook rather than part of the main kustomization above.
+      - name: Bump migration job image tag
+        run: |
+          sed -i "s|electionpulse-wb/migration:.*|electionpulse-wb/migration:${{ needs.build-and-push.outputs.image_tag }}\"|" \
+            deployment/kubernetes/base/04-migration-job.yaml
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add deployment/kubernetes/base/kustomization.yaml deployment/kubernetes/base/04-migration-job.yaml
+          git commit -m "ci: deploy image ${{ needs.build-and-push.outputs.image_tag }}" || echo "No changes to commit"
+          git push
+
+      # ── This is the actual "deploy" step in a GitOps world ──────────────
+      # There is no `kubectl apply` here. Pushing this commit is the deploy.
+      # ArgoCD's sync loop (polling or webhook-triggered) picks it up within
+      # its configured interval and reconciles the cluster automatically.
+      # If you want this workflow to *wait* and confirm the rollout
+      # succeeded rather than fire-and-forget, add an `argocd app wait`
+      # step here using the ArgoCD CLI and an API token instead.

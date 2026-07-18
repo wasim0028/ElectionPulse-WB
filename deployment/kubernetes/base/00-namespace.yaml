@@ -1,12 +1,10 @@
-# ── Namespace ──────────────────────────────────────────────────────────────────
 apiVersion: v1
 kind: Namespace
 metadata:
   name: election
   labels:
-    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/managed-by: argocd
     environment: production
-
 ---
 # ── ConfigMap — shared app config ─────────────────────────────────────────────
 apiVersion: v1
@@ -17,26 +15,40 @@ metadata:
 data:
   ASPNETCORE_ENVIRONMENT: "Production"
   ASPNETCORE_URLS: "http://+:5080"
-  # DB host is injected from Secret; only non-sensitive config here
   DB_PORT: "1433"
-  DB_NAME: "${DB_NAME}"
-
+  # FIXED: was "${DB_NAME}" resolved via envsubst at apply-time. ArgoCD has
+  # no shell in its sync loop, so this must be a real, static value in git.
+  DB_NAME: "ElectionDB"
 ---
-# ── Secret — database credentials (base64 encoded) ───────────────────────────
-# In production use AWS Secrets Manager + External Secrets Operator instead
-# kubectl create secret generic election-db-secret \
-#   --from-literal=DB_HOST=<rds-endpoint> \
-#   --from-literal=DB_USER=sa \
-#   --from-literal=DB_PASS=<password> \
-#   -n election
+# ── Secret — database credentials ────────────────────────────────────────────
+# FIXED: was "stringData: DB_HOST: ${RDS_ENDPOINT} / DB_USER: ${DB_USER} /
+# DB_PASS: ${DB_PASS}" resolved via envsubst. Two problems with that under
+# GitOps: (1) ArgoCD can't run envsubst, and (2) even if it could, this would
+# mean committing real database credentials into git history — a real
+# secret, permanently, in every commit. Neither is acceptable in a GitOps
+# repo that anyone can clone.
+#
+# This Secret resource is now a placeholder ONLY. Populate it out-of-band,
+# once, imperatively (not committed to git with real values):
+#
+#   kubectl create secret generic election-db-secret \
+#     --from-literal=DB_HOST=<rds-endpoint> \
+#     --from-literal=DB_USER=sa \
+#     --from-literal=DB_PASS='<password>' \
+#     -n election
+#
+# ArgoCD's selfHeal only reconciles resources it manages from git — an
+# imperatively created Secret with the same name is left alone as long as
+# this file doesn't also declare stringData. Longer term, replace this
+# entirely with an ExternalSecret (see external-secret.yaml) backed by AWS
+# Secrets Manager, so the real value never touches kubectl or git at all.
 apiVersion: v1
 kind: Secret
 metadata:
   name: election-db-secret
   namespace: election
+  annotations:
+    # Tells ArgoCD "this resource exists, don't try to manage its data,
+    # don't prune it, don't complain about drift on the stringData field."
+    argocd.argoproj.io/sync-options: Prune=false
 type: Opaque
-stringData:
-  # ⚠ Replace with actual RDS endpoint after terraform apply
-  DB_HOST: "${RDS_ENDPOINT}"
-  DB_USER: "${DB_USER}"
-  DB_PASS: "${DB_PASS}"

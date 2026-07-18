@@ -3,36 +3,66 @@ kind: Job
 metadata:
   name: rds-data-migration
   namespace: election
+  annotations:
+    # These two annotations are what turn this from "a Job someone runs with
+    # kubectl" into "ArgoCD runs this automatically before every sync, and
+    # blocks the rest of the deployment if it fails." HookSucceeded means
+    # ArgoCD deletes the Job once it completes successfully, but leaves a
+    # failed one in place so you can `kubectl logs`/`describe` it — same
+    # workflow you used manually throughout this whole debugging process.
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
 spec:
   backoffLimit: 1
   template:
     spec:
       containers:
-      - name: migration-worker
-        image: ${ECR_MIGRATION}:${IMAGE_TAG}
-        env:
-        - name: DB_SERVER
-          value: "${RDS_ENDPOINT}"
-        - name: DB_USER
-          value: "${DB_USER}"
-        - name: DB_PASS
-          value: "${DB_PASS}"
-        - name: DB_NAME
-          value: "${DB_NAME}"
-        - name: AWS_REGION
-          value: "${AWS_REGION}"
-        - name: S3_BUCKET
-          value: "${S3_BUCKET}"
-        - name: AWS_ACCESS_KEY_ID
-          valueFrom:
-            secretKeyRef:
-              name: aws-credentials
-              key: access-key-id
-              optional: true
-        - name: AWS_SECRET_ACCESS_KEY
-          valueFrom:
-            secretKeyRef:
-              name: aws-credentials
-              key: secret-access-key
-              optional: true
+        - name: migration-worker
+          # FIXED: was "${ECR_MIGRATION}:${IMAGE_TAG}" via envsubst.
+          # Kustomize's images: transformer doesn't cover this file (it's
+          # not in kustomization.yaml's resources: list, since a one-shot
+          # Job doesn't belong in a continuously-reconciled Application) —
+          # so CI updates this tag directly with a small sed/yq step
+          # instead. See .github/workflows/ci-cd.yml's
+          # "Bump migration job image tag" step.
+          image: 326334468168.dkr.ecr.ap-south-1.amazonaws.com/electionpulse-wb/migration:latest
+          env:
+            - name: DB_SERVER
+              valueFrom:
+                secretKeyRef:
+                  name: election-db-secret
+                  key: DB_HOST
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: election-db-secret
+                  key: DB_USER
+            - name: DB_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: election-db-secret
+                  key: DB_PASS
+            - name: DB_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: election-config
+                  key: DB_NAME
+            - name: AWS_REGION
+              value: "ap-south-1"
+            - name: S3_BUCKET
+              value: "biryani-bucket-0027"
+            - name: BACKUP_S3_KEY
+              value: "backups/Test_Wasim.bak"
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: aws-credentials
+                  key: access-key-id
+                  optional: true
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aws-credentials
+                  key: secret-access-key
+                  optional: true
       restartPolicy: Never

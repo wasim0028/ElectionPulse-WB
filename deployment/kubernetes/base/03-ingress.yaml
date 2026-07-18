@@ -73,7 +73,13 @@ spec:
     - Egress
 
   ingress:
-    # Allow ingress to frontend from ALB (any source for now)
+    # FIXED: was "port: 80" — but the ALB uses target-type: ip, which sends
+    # traffic directly to the pod's containerPort (8080), completely
+    # bypassing the Service (which maps 80 -> 8080). The old rule only
+    # allowed port 80, so real ALB traffic to port 8080 was silently
+    # dropped by this NetworkPolicy — while kubelet's own readiness/liveness
+    # probes (exempted from NetworkPolicy enforcement) still succeeded,
+    # making the pods look healthy while external traffic timed out (504).
     - ports:
         - port: 8080
 

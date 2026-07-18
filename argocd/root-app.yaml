@@ -1,0 +1,33 @@
+# argocd/root-app.yaml
+#
+# This is the single Application you apply manually (once). It watches the
+# argocd/apps/ directory in this same repo and manages every other
+# Application declaratively from there — the "app of apps" pattern. From
+# this point on, adding a new environment/service means adding a YAML file
+# here and committing, not running argocd or kubectl commands by hand.
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: electionpulse-wb-root
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/wasim0028/ElectionPulse-WB.git
+    targetRevision: main
+    path: argocd/apps
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+
+  syncPolicy:
+    automated:
+      prune: true      # remove resources deleted from git
+      selfHeal: true    # revert manual kubectl edits back to git's version
+    syncOptions:
+      - CreateNamespace=true

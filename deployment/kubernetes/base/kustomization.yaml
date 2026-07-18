@@ -1,0 +1,50 @@
+# deployment/kubernetes/base/kustomization.yaml
+#
+# This replaces the envsubst-based templating in deploy.sh. Instead of shell
+# substitution at apply-time, Kustomize handles variable values declaratively:
+#   - image tags are set via the `images:` transformer (CI updates this file)
+#   - account ID / region are baked into the image name at build time
+#   - RDS_ENDPOINT / DB_USER / DB_PASS move to a real Secret (see note below)
+#
+# NOTE ON SECRETS: election-db-secret currently uses stringData with
+# ${RDS_ENDPOINT}/${DB_USER}/${DB_PASS} interpolated by envsubst. That pattern
+# cannot work under ArgoCD, since there's no shell in the sync loop, and you
+# don't want real credentials committed to git either way. Recommended path:
+# adopt the External Secrets Operator (ESO), pointing at AWS Secrets Manager,
+# so the Secret resource in git only references a *name*, and the actual
+# value is fetched live from Secrets Manager at sync time. This also finally
+# gets DB_PASS out of a plaintext Kubernetes Secret in your git history.
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: election
+
+resources:
+  - 00-namespace.yaml
+  - 01-backend.yaml
+  - 02-frontend.yaml
+  - 03-ingress.yaml
+  # FIXED: previously excluded with the reasoning "a one-shot Job doesn't
+  # belong in a continuously-reconciled Application" — true in spirit, but
+  # wrong in practice. ArgoCD only detects PreSync/hook-delete-policy
+  # annotations on resources it actually sees in the rendered manifest set.
+  # If this file isn't listed here, `kustomize build` never emits it, and
+  # ArgoCD never applies it at all — hook or not. Including it here is what
+  # makes it run as a PreSync hook; the annotations control WHEN and cleanup,
+  # not whether it's part of the set.
+  - 04-migration-job.yaml
+
+images:
+  - name: BACKEND_IMAGE_PLACEHOLDER
+    newName: 326334468168.dkr.ecr.ap-south-1.amazonaws.com/electionpulse-wb/backend
+    newTag: REPLACED_BY_CI
+  - name: FRONTEND_IMAGE_PLACEHOLDER
+    newName: 326334468168.dkr.ecr.ap-south-1.amazonaws.com/electionpulse-wb/frontend
+    newTag: REPLACED_BY_CI
+
+# CI's job on every merge is now: build image -> push to ECR -> update the
+# newTag values above (e.g. via `kustomize edit set image` or a small sed/yq
+# step) -> commit -> push. ArgoCD's own poll/webhook loop picks up that
+# commit and reconciles automatically. No more kubectl apply from a laptop
+# or CI runner directly.
