@@ -27,6 +27,6 @@ RUN ACCEPT_EULA=Y apt-get install -y msodbcsql18
 RUN pip install --no-cache-dir pyodbc boto3 python-dotenv
 
 # Copy your actual migration orchestration logic from the root workspace
-COPY migrate.py .
+COPY deployment/docker/migrate.py .
 
 CMD ["python", "migrate.py"]
