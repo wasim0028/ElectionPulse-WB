@@ -38,10 +38,10 @@ resources:
 images:
   - name: BACKEND_IMAGE_PLACEHOLDER
     newName: 326334468168.dkr.ecr.ap-south-1.amazonaws.com/electionpulse-wb/backend
-    newTag: REPLACED_BY_CI
+    newTag: latest
   - name: FRONTEND_IMAGE_PLACEHOLDER
     newName: 326334468168.dkr.ecr.ap-south-1.amazonaws.com/electionpulse-wb/frontend
-    newTag: REPLACED_BY_CI
+    newTag: latest
 
 # CI's job on every merge is now: build image -> push to ECR -> update the
 # newTag values above (e.g. via `kustomize edit set image` or a small sed/yq
