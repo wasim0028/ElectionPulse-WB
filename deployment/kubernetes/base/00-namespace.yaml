@@ -5,6 +5,18 @@ metadata:
   labels:
     app.kubernetes.io/managed-by: argocd
     environment: production
+  annotations:
+    # FIXED: root cause of "configmap election-config not found" during the
+    # migration Job. ArgoCD runs ALL PreSync hooks to completion BEFORE
+    # applying any normal Sync-phase resource — sync-wave numbers do not
+    # override hook-phase ordering. Since 04-migration-job.yaml is a PreSync
+    # hook, and this Namespace/ConfigMap/Secret were plain (non-hook)
+    # resources, the Job always ran before these ever existed. Making these
+    # PreSync hooks too, at an earlier sync-wave than the migration job's,
+    # guarantees correct ordering: Namespace/Config/Secret (wave -2) ->
+    # Migration Job (wave -1) -> everything else (default Sync phase).
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/sync-wave: "-2"
 ---
 # ── ConfigMap — shared app config ─────────────────────────────────────────────
 apiVersion: v1
@@ -12,6 +24,9 @@ kind: ConfigMap
 metadata:
   name: election-config
   namespace: election
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/sync-wave: "-2"
 data:
   ASPNETCORE_ENVIRONMENT: "Production"
   ASPNETCORE_URLS: "http://+:5080"
@@ -50,5 +65,12 @@ metadata:
   annotations:
     # Tells ArgoCD "this resource exists, don't try to manage its data,
     # don't prune it, don't complain about drift on the stringData field."
+    # NOTE: deliberately NOT a PreSync hook, unlike Namespace/ConfigMap above.
+    # This Secret is bootstrapped out-of-band via `kubectl create secret`
+    # BEFORE the first ArgoCD sync ever runs (see GITOPS_BOOTSTRAP.md /
+    # FRESH_BRINGUP.md Step 7). Since it already exists with real data by
+    # the time ArgoCD looks at it, it doesn't need ordering — and making it
+    # a hook risks ArgoCD applying this empty (no stringData) definition
+    # over the real one.
     argocd.argoproj.io/sync-options: Prune=false
 type: Opaque
