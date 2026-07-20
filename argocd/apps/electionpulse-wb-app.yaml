@@ -1,10 +1,4 @@
 # argocd/apps/electionpulse-wb.yaml
-#
-# The actual application. Points at the Kustomize base we just converted.
-# Note the annotations on 04-migration-job.yaml (see below) — that's what
-# turns "run this Job manually with kubectl" into "ArgoCD runs this
-# automatically before every sync, and blocks the rest of the sync if it fails."
-
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -26,8 +20,7 @@ spec:
     automated:
       prune: true
       selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
+    syncOptions: []
     retry:
       limit: 2
       backoff:
@@ -35,30 +28,8 @@ spec:
         factor: 2
         maxDuration: 3m
 
-  # Surfaces target group / pod health accurately in the ArgoCD UI instead
-  # of just "Synced" — catches the exact "healthy pod, broken app" class of
-  # bug from the nginx proxy_pass incident, since ArgoCD's health checks
-  # follow the same readinessProbe your manifests already define.
   ignoreDifferences:
     - group: apps
       kind: Deployment
       jsonPointers:
-        - /spec/replicas   # let the HPA own replica count, don't fight it
----
-# ── 04-migration-job.yaml gets these two annotations added ─────────────────
-# apiVersion: batch/v1
-# kind: Job
-# metadata:
-#   name: rds-data-migration
-#   namespace: election
-#   annotations:
-#     argocd.argoproj.io/hook: PreSync
-#     argocd.argoproj.io/hook-delete-policy: HookSucceeded
-# spec:
-#   ...unchanged...
-#
-# With these annotations, ArgoCD runs this Job before every sync of the rest
-# of the application, waits for it to complete, and deletes it automatically
-# once it succeeds (HookSucceeded) — while leaving a failed Job in place for
-# you to inspect via `kubectl logs`/`describe`, same as you did manually
-# throughout this whole debugging process.
+        - /spec/replicas
