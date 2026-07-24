@@ -12,13 +12,26 @@ data:
   ASPNETCORE_URLS: "http://+:5080"
   DB_PORT: "1433"
   DB_NAME: "ElectionDB"
----
-# ── Secret — database credentials, bootstrapped out-of-band ──────────────────
-apiVersion: v1
-kind: Secret
-metadata:
-  name: election-db-secret
-  namespace: election
-  annotations:
-    argocd.argoproj.io/sync-options: Prune=false
-type: Opaque
+
+# NOTE: The Secret resource was REMOVED from this file entirely.
+# ROOT CAUSE FOUND: ArgoCD was re-applying this Secret (declared with no
+# data/stringData) on every single sync, and kubectl's 3-way merge logic
+# stripped the manually-bootstrapped DB_HOST/DB_USER/DB_PASS keys each
+# time, since fields absent from the new manifest are treated as
+# intentionally removed. This is what actually caused every "secret
+# vanished" incident this session — not the namespace, not hooks, not
+# timing races we chased instead.
+#
+# The Secret is now managed ENTIRELY out-of-band, outside git, outside
+# this Application's resource set. ArgoCD will never see it, never sync
+# it, never touch it again. Bootstrap it once via:
+#
+#   kubectl create secret generic election-db-secret \
+#     --from-literal=DB_HOST=<rds-endpoint> \
+#     --from-literal=DB_USER=sa \
+#     --from-literal=DB_PASS='<password>' \
+#     -n election
+#
+# Long-term correct answer is still the External Secrets Operator
+# (external-secret.yaml) — but this is the permanent fix for the
+# recurring failure pattern in the meantime.
