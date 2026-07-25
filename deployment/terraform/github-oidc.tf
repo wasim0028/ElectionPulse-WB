@@ -108,6 +108,14 @@ data "aws_iam_policy_document" "github_actions_terraform_trust" {
       values   = [
         "repo:wasim0028/ElectionPulse-WB:ref:refs/heads/main",
         "repo:wasim0028/ElectionPulse-WB:pull_request",   # allows `terraform plan` on PRs
+        # FIXED: was rejecting the apply job with "Not authorized to perform
+        # sts:AssumeRoleWithWebIdentity" — GitHub changes the OIDC token's
+        # "sub" claim format specifically when a job declares
+        # `environment: production` (as terraform.yml's apply job does).
+        # Instead of "ref:refs/heads/main", the token's sub becomes
+        # "environment:production" — neither of the two patterns above
+        # matched that shape at all, so AWS correctly rejected it.
+        "repo:wasim0028/ElectionPulse-WB:environment:production",
       ]
     }
 
