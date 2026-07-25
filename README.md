@@ -219,3 +219,4 @@ kubectl delete namespace election
 # Then destroy AWS infrastructure
 ./scripts/deploy.sh destroy
 ```
+# test
