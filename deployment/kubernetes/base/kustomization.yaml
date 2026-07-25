@@ -20,11 +20,6 @@ kind: Kustomization
 
 namespace: election
 
-resources:
-  - 00-namespace.yaml
-  - 01-backend.yaml
-  - 02-frontend.yaml
-  - 03-ingress.yaml
   # FIXED: previously excluded with the reasoning "a one-shot Job doesn't
   # belong in a continuously-reconciled Application" — true in spirit, but
   # wrong in practice. ArgoCD only detects PreSync/hook-delete-policy
@@ -33,18 +28,17 @@ resources:
   # ArgoCD never applies it at all — hook or not. Including it here is what
   # makes it run as a PreSync hook; the annotations control WHEN and cleanup,
   # not whether it's part of the set.
-  - 04-migration-job.yaml
+resources:
+- 00-namespace.yaml
+- 01-backend.yaml
+- 02-frontend.yaml
+- 03-ingress.yaml
+- 04-migration-job.yaml
 
 images:
-  - name: BACKEND_IMAGE_PLACEHOLDER
-    newName: 326334468168.dkr.ecr.ap-south-1.amazonaws.com/electionpulse-wb/backend
-    newTag: latest
-  - name: FRONTEND_IMAGE_PLACEHOLDER
-    newName: 326334468168.dkr.ecr.ap-south-1.amazonaws.com/electionpulse-wb/frontend
-    newTag: latest
-
-# CI's job on every merge is now: build image -> push to ECR -> update the
-# newTag values above (e.g. via `kustomize edit set image` or a small sed/yq
-# step) -> commit -> push. ArgoCD's own poll/webhook loop picks up that
-# commit and reconciles automatically. No more kubectl apply from a laptop
-# or CI runner directly.
+- name: BACKEND_IMAGE_PLACEHOLDER
+  newName: 326334468168.dkr.ecr.ap-south-1.amazonaws.com/electionpulse-wb/backend
+  newTag: 5626fa4
+- name: FRONTEND_IMAGE_PLACEHOLDER
+  newName: 326334468168.dkr.ecr.ap-south-1.amazonaws.com/electionpulse-wb/frontend
+  newTag: 5626fa4
