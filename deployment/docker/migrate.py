@@ -51,7 +51,32 @@ def execute_query(connection_string, query, fetch=False):
     return result
 
 
+def database_exists():
+    """Checks whether DB_NAME already exists on the RDS instance."""
+    check_query = f"SELECT name FROM sys.databases WHERE name = '{DB_NAME}';"
+    rows = execute_query(RDS_CONN_STR, check_query, fetch=True)
+    return bool(rows)
+
+
 def initiate_rds_restore():
+    """
+    Triggers the S3 native restore, unless the database already exists.
+
+    Returns:
+        True  -> restore was actually started, caller should monitor progress
+        False -> database already existed, restore was skipped entirely
+    """
+    # NEW: Idempotency check. Without this, a retry against an already-
+    # restored database fails with "Database 'X' already exists" — a real
+    # failure mode hit repeatedly during GitOps bring-up, since a PreSync
+    # hook Job can legitimately get retried (secret timing, ArgoCD sync
+    # retries, transient connection errors, etc.) after the restore
+    # already succeeded once on a prior attempt.
+    print(f"Checking if database '{DB_NAME}' already exists...")
+    if database_exists():
+        print(f"Database '{DB_NAME}' already exists — skipping restore, treating as already migrated.")
+        return False
+
     print(f"Connecting to RDS and triggering native S3 restore for bucket: '{S3_BUCKET}'...")
     # FIXED: Was hardcoded to "Election_WB_2026.bak" at the bucket root, which
     # doesn't exist. The confirmed object lives at "backups/Test_Wasim.bak".
@@ -65,6 +90,7 @@ def initiate_rds_restore():
     """
     execute_query(RDS_CONN_STR, restore_query)
     print("SUCCESS: AWS RDS restore task successfully registered.")
+    return True
 
 
 def monitor_restore():
@@ -115,9 +141,12 @@ def monitor_restore():
 
 if __name__ == "__main__":
     try:
-        initiate_rds_restore()
+        restore_started = initiate_rds_restore()
+        if not restore_started:
+            # Database already existed — nothing to monitor, exit cleanly
+            # so ArgoCD's PreSync hook reports success instead of hanging.
+            sys.exit(0)
         monitor_restore()
     except Exception as e:
         print(f"CRITICAL: Migration Pipeline Aborted: {e}")
         sys.exit(1)
-
