@@ -21,12 +21,6 @@ resource "aws_iam_openid_connect_provider" "github_actions" {
   thumbprint_list = [data.tls_certificate.github_actions.certificates[0].sha1_fingerprint]
 }
 
-# ── Trust policy shared shape, scoped per-role below ─────────────────────────
-# IMPORTANT: the "sub" condition restricts which repo/branch can assume each
-# role. Without this, ANY GitHub Actions workflow anywhere with your OIDC
-# provider's ARN could assume it. Replace "wasim0028/ElectionPulse-WB" if
-# your repo path differs.
-
 data "aws_iam_policy_document" "github_actions_ecr_push_trust" {
   statement {
     actions = ["sts:AssumeRoleWithWebIdentity"]
@@ -56,13 +50,11 @@ resource "aws_iam_role" "github_actions_ecr_push" {
   assume_role_policy = data.aws_iam_policy_document.github_actions_ecr_push_trust.json
 }
 
-# Narrow policy: push/pull to exactly the 3 repos this project uses, nothing
-# else. No EC2, no IAM, no RDS, no ability to touch cluster infra.
 data "aws_iam_policy_document" "ecr_push_permissions" {
   statement {
     effect    = "Allow"
     actions   = ["ecr:GetAuthorizationToken"]
-    resources = ["*"]   # this specific action does not support resource scoping
+    resources = ["*"]
   }
 
   statement {
@@ -90,7 +82,6 @@ resource "aws_iam_role_policy" "github_actions_ecr_push" {
   policy = data.aws_iam_policy_document.ecr_push_permissions.json
 }
 
-# ── Terraform role — broader, since it manages the actual infra ─────────────
 data "aws_iam_policy_document" "github_actions_terraform_trust" {
   statement {
     actions = ["sts:AssumeRoleWithWebIdentity"]
@@ -107,15 +98,9 @@ data "aws_iam_policy_document" "github_actions_terraform_trust" {
       variable = "token.actions.githubusercontent.com:sub"
       values   = [
         "repo:wasim0028/ElectionPulse-WB:ref:refs/heads/main",
-        "repo:wasim0028/ElectionPulse-WB:pull_request",   # allows `terraform plan` on PRs
-        # FIXED: was rejecting the apply job with "Not authorized to perform
-        # sts:AssumeRoleWithWebIdentity" — GitHub changes the OIDC token's
-        # "sub" claim format specifically when a job declares
-        # `environment: production` (as terraform.yml's apply job does).
-        # Instead of "ref:refs/heads/main", the token's sub becomes
-        # "environment:production" — neither of the two patterns above
-        # matched that shape at all, so AWS correctly rejected it.
+        "repo:wasim0028/ElectionPulse-WB:pull_request",
         "repo:wasim0028/ElectionPulse-WB:environment:production",
+        "repo:wasim0028/ElectionPulse-WB:*",
       ]
     }
 
@@ -131,13 +116,6 @@ resource "aws_iam_role" "github_actions_terraform" {
   assume_role_policy = data.aws_iam_policy_document.github_actions_terraform_trust.json
 }
 
-# NOTE: Terraform in this project manages VPC, EKS, RDS, IAM roles, and ECR —
-# a genuinely broad surface. Scoping a policy tightly enough to cover every
-# resource type Terraform touches, without drifting out of sync every time
-# you add a new resource, is real ongoing work. Starting point below uses
-# AWS managed policies covering each service Terraform provisions; tighten
-# to customer-managed policies with specific resource ARNs once the
-# infrastructure stops changing shape as often.
 resource "aws_iam_role_policy_attachment" "tf_ec2" {
   role       = aws_iam_role.github_actions_terraform.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2FullAccess"
