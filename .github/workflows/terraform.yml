@@ -13,15 +13,15 @@ on:
     paths:
       - "deployment/terraform/**"
   push:
-  workflow_dispatch: {}
     branches: [main]
     paths:
       - "deployment/terraform/**"
+  workflow_dispatch: {}
 
 permissions:
   id-token: write
   contents: read
-  pull-requests: write   # lets the plan get posted as a PR comment
+  pull-requests: write
 
 env:
   AWS_REGION: ap-south-1
@@ -62,11 +62,8 @@ jobs:
             });
 
   apply:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    # Requires a GitHub Environment named "production" with required
-    # reviewers configured — this is the manual approval gate, replacing
-    # the interactive `terraform apply` you'd run by hand today.
     environment: production
     defaults:
       run:
