@@ -13,7 +13,7 @@ spec:
     spec:
       containers:
         - name: migration-worker
-          image: 326334468168.dkr.ecr.ap-south-1.amazonaws.com/electionpulse-wb/migration:c1f04c8"
+          image: 326334468168.dkr.ecr.ap-south-1.amazonaws.com/electionpulse-wb/migration:latest
           env:
             - name: DB_SERVER
               valueFrom:
