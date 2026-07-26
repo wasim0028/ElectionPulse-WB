@@ -25,7 +25,7 @@ spec:
           # so CI updates this tag directly with a small sed/yq step
           # instead. See .github/workflows/ci-cd.yml's
           # "Bump migration job image tag" step.
-          image: 326334468168.dkr.ecr.ap-south-1.amazonaws.com/electionpulse-wb/migration:5626fa4"
+          image: 326334468168.dkr.ecr.ap-south-1.amazonaws.com/electionpulse-wb/migration:5626fa4
           env:
             - name: DB_SERVER
               valueFrom:
