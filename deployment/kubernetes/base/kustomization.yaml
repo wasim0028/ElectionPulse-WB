@@ -4,16 +4,16 @@ kind: Kustomization
 namespace: election
 
 resources:
-  - 00-namespace.yaml
-  - 01-backend.yaml
-  - 02-frontend.yaml
-  - 03-ingress.yaml
-  - 04-migration-job.yaml
+- 00-namespace.yaml
+- 01-backend.yaml
+- 02-frontend.yaml
+- 03-ingress.yaml
+- 04-migration-job.yaml
 
 images:
-  - name: BACKEND_IMAGE_PLACEHOLDER
-    newName: 326334468168.dkr.ecr.ap-south-1.amazonaws.com/electionpulse-wb/backend
-    newTag: latest
-  - name: FRONTEND_IMAGE_PLACEHOLDER
-    newName: 326334468168.dkr.ecr.ap-south-1.amazonaws.com/electionpulse-wb/frontend
-    newTag: latest
+- name: BACKEND_IMAGE_PLACEHOLDER
+  newName: 326334468168.dkr.ecr.ap-south-1.amazonaws.com/electionpulse-wb/backend
+  newTag: c1f04c8
+- name: FRONTEND_IMAGE_PLACEHOLDER
+  newName: 326334468168.dkr.ecr.ap-south-1.amazonaws.com/electionpulse-wb/frontend
+  newTag: c1f04c8
