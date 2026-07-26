@@ -11,7 +11,8 @@ metadata:
     # failed one in place so you can `kubectl logs`/`describe` it — same
     # workflow you used manually throughout this whole debugging process.
     argocd.argoproj.io/hook: PreSync
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+    argocd.argoproj.io/sync-wave: "-1"
 spec:
   backoffLimit: 1
   template:

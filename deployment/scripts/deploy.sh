@@ -64,11 +64,74 @@ tf_apply() {
   cd -
 }
 
+pre_destroy_cleanup() {
+  section "Pre-Destroy Cleanup — removing ALB before Terraform touches the VPC"
+ 
+  if ! kubectl get ingress election-ingress -n election &> /dev/null; then
+    log "No Ingress found — nothing to clean up, skipping."
+    return 0
+  fi
+ 
+  log "Deleting Ingress (this triggers the ALB controller to tear down its own ALB)..."
+  kubectl delete ingress election-ingress -n election --ignore-not-found=true
+ 
+  log "Waiting for the ALB to actually disappear from AWS (this is async, not instant)..."
+  local attempts=0
+  local max_attempts=20   # ~10 minutes at 30s intervals
+ 
+  while true; do
+    local remaining
+    remaining=$(aws elbv2 describe-load-balancers \
+      --query "LoadBalancers[?contains(LoadBalancerName, 'election')].LoadBalancerArn" \
+      --output text 2>/dev/null || echo "")
+ 
+    if [ -z "${remaining}" ]; then
+      log "ALB confirmed gone. Safe to proceed with terraform destroy."
+      break
+    fi
+ 
+    attempts=$((attempts + 1))
+    if [ "${attempts}" -ge "${max_attempts}" ]; then
+      warn "ALB still present after ${max_attempts} checks (~10 min)."
+      warn "ARN(s) still active: ${remaining}"
+      warn "Deleting manually before continuing, to avoid a stuck VPC destroy..."
+      for arn in ${remaining}; do
+        aws elbv2 delete-load-balancer --load-balancer-arn "${arn}" || true
+      done
+      sleep 30
+      break
+    fi
+ 
+    warn "ALB still present (attempt ${attempts}/${max_attempts}), waiting 30s..."
+    sleep 30
+  done
+ 
+  # Target groups can also linger briefly after the ALB itself is gone —
+  # not usually blocking, but worth confirming so no orphaned cost sits
+  # around after the cluster is destroyed.
+  local orphaned_tgs
+  orphaned_tgs=$(aws elbv2 describe-target-groups \
+    --query "TargetGroups[?contains(TargetGroupName, 'election')].TargetGroupArn" \
+    --output text 2>/dev/null || echo "")
+ 
+  if [ -n "${orphaned_tgs}" ]; then
+    warn "Orphaned target group(s) found, cleaning up: ${orphaned_tgs}"
+    for tg in ${orphaned_tgs}; do
+      aws elbv2 delete-target-group --target-group-arn "${tg}" || true
+    done
+  fi
+ 
+  log "Pre-destroy cleanup complete."
+}
+
 tf_destroy() {
   section "Terraform Destroy"
   warn "This will DELETE all AWS resources!"
   read -p "Type 'yes' to confirm: " confirm
   [[ "$confirm" == "yes" ]] || error "Aborted"
+
+  pre_destroy_cleanup
+
   cd "${TF_DIR}"
   terraform destroy \
     -var="aws_region=${AWS_REGION}" \
@@ -279,6 +342,7 @@ case "${1:-all}" in
   plan)        tf_plan ;;
   apply)       tf_apply ;;
   destroy)     tf_destroy ;;
+  pre-destroy-cleanup)  pre_destroy_cleanup ;;
   build)       build_images ;;
   push)        push_images ;;
   alb)         install_alb_controller ;;
@@ -286,5 +350,5 @@ case "${1:-all}" in
   deploy)      deploy_k8s ;;
   status)      status ;;
   all)         tf_init; tf_plan; tf_apply; setup_kubectl; build_images; push_images; install_alb_controller; run_db_migration; deploy_k8s ;;
-  *)           echo "Usage: $0 {init|plan|apply|destroy|build|push|alb|migrate|deploy|status|all}" ;;
+  *)           echo "Usage: $0 {init|plan|apply|destroy|pre-destroy-cleanup|build|push|alb|migrate|deploy|status|all}" ;;
 esac
