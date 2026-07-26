@@ -13,7 +13,7 @@ resources:
 images:
 - name: BACKEND_IMAGE_PLACEHOLDER
   newName: 326334468168.dkr.ecr.ap-south-1.amazonaws.com/electionpulse-wb/backend
-  newTag: c1f04c8
+  newTag: latest
 - name: FRONTEND_IMAGE_PLACEHOLDER
   newName: 326334468168.dkr.ecr.ap-south-1.amazonaws.com/electionpulse-wb/frontend
-  newTag: c1f04c8
+  newTag: latest
