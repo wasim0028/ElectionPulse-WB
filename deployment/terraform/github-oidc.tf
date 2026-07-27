@@ -137,5 +137,38 @@ resource "aws_iam_role_policy_attachment" "tf_iam" {
   policy_arn = "arn:aws:iam::aws:policy/IAMFullAccess"
 }
 
+data "aws_iam_policy_document" "tf_backend_access" {
+  statement {
+    effect = "Allow"
+    actions = [
+      "s3:GetObject",
+      "s3:PutObject",
+      "s3:ListBucket",
+    ]
+    resources = [
+      "arn:aws:s3:::electionpulse-wb-tfstate",
+      "arn:aws:s3:::electionpulse-wb-tfstate/*",
+    ]
+  }
+
+  statement {
+    effect = "Allow"
+    actions = [
+      "dynamodb:GetItem",
+      "dynamodb:PutItem",
+      "dynamodb:DeleteItem",
+    ]
+    resources = [
+      "arn:aws:dynamodb:ap-south-1:326334468168:table/electionpulse-tfstate-lock",
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "tf_backend_access" {
+  name   = "terraform-backend-access"
+  role   = aws_iam_role.github_actions_terraform.id
+  policy = data.aws_iam_policy_document.tf_backend_access.json
+}
+
 output "github_actions_ecr_push_role_arn" { value = aws_iam_role.github_actions_ecr_push.arn }
 output "github_actions_terraform_role_arn" { value = aws_iam_role.github_actions_terraform.arn }
