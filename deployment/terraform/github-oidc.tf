@@ -124,6 +124,56 @@ resource "aws_iam_role_policy_attachment" "tf_eks" {
   role       = aws_iam_role.github_actions_terraform.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
 }
+
+data "aws_iam_policy_document" "tf_eks_management" {
+  statement {
+    effect = "Allow"
+    actions = [
+      "eks:DescribeCluster",
+      "eks:CreateCluster",
+      "eks:UpdateClusterConfig",
+      "eks:UpdateClusterVersion",
+      "eks:DeleteCluster",
+      "eks:TagResource",
+      "eks:UntagResource",
+      "eks:ListTagsForResource",
+      "eks:DescribeNodegroup",
+      "eks:CreateNodegroup",
+      "eks:UpdateNodegroupConfig",
+      "eks:UpdateNodegroupVersion",
+      "eks:DeleteNodegroup",
+      "eks:DescribeAddon",
+      "eks:CreateAddon",
+      "eks:UpdateAddon",
+      "eks:DeleteAddon",
+      "eks:ListAddons",
+      "eks:DescribeAddonVersions",
+      "eks:AssociateEncryptionConfig",
+    ]
+    resources = [
+      "arn:aws:eks:ap-south-1:326334468168:cluster/electionpulse-wb-eks",
+      "arn:aws:eks:ap-south-1:326334468168:nodegroup/electionpulse-wb-eks/*/*",
+      "arn:aws:eks:ap-south-1:326334468168:addon/electionpulse-wb-eks/*/*",
+    ]
+  }
+
+  statement {
+    # ListClusters/DescribeAddonVersions-style read actions that don't
+    # support resource-level scoping in IAM at all.
+    effect = "Allow"
+    actions = [
+      "eks:ListClusters",
+    ]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "tf_eks_management" {
+  name   = "eks-management-scoped"
+  role   = aws_iam_role.github_actions_terraform.id
+  policy = data.aws_iam_policy_document.tf_eks_management.json
+}
+
 resource "aws_iam_role_policy_attachment" "tf_rds" {
   role       = aws_iam_role.github_actions_terraform.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonRDSFullAccess"
