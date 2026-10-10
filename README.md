@@ -4,42 +4,42 @@
 
 ```
 ┌───────────────────────────────────────────────────────────────────┐
-│                          ARCHITECTURE                              │
-│                                                                     │
-│  Internet                                                          │
-│     │                                                              │
-│     ▼                                                              │
-│  AWS ALB (Application Load Balancer, HTTP-only currently)          │
-│     │  :80                                                         │
-│     ▼                                                              │
-│  ┌────────────────────────────────────────────────────────────┐    │
-│  │  EKS Cluster (ap-south-1)                                  │    │
-│  │  ┌──────────────────────────────────────────────────────┐  │    │
-│  │  │ Namespace: election                                  │  │    │
-│  │  │                                                       │  │    │
-│  │  │  [Frontend Pod x2]  nginx + React, uid 101 (non-root) │  │    │
-│  │  │        │ /api/* → backend-svc                        │  │    │
-│  │  │  [Backend Pod x2]   ASP.NET Core 8                    │  │    │
-│  │  └──────────────────────┬────────────────────────────────┘  │    │
-│  │  Namespace: argocd                                         │    │
-│  │  ┌──────────────────────────────────────────────────────┐  │    │
-│  │  │ ArgoCD — watches this git repo, auto-syncs on push    │  │    │
-│  │  └──────────────────────────────────────────────────────┘  │    │
-│  │  Namespace: kube-system                                    │    │
-│  │  ┌──────────────────────────────────────────────────────┐  │    │
-│  │  │ AWS Load Balancer Controller — IRSA-scoped IAM role   │  │    │
-│  │  └──────────────────────────────────────────────────────┘  │    │
-│  └──────────────────────┼───────────────────────────────────────┘    │
-│                         ▼                                          │
-│  RDS SQL Server (private subnet)                                   │
-│  Database: ElectionDB, restored from S3 via native RDS restore     │
-│                                                                     │
-│  ECR: electionpulse-wb/{frontend,backend,migration}                │
-│                                                                     │
-│  GitHub Actions:                                                   │
-│    ci-cd.yml       → build/push images, bump Kustomize image tags  │
-│    terraform.yml   → plan on PR, apply on push (manual approval)   │
-│  Both authenticate via OIDC — no long-lived AWS keys in GitHub.    │
+│                          ARCHITECTURE                             │
+│                                                                   │
+│  Internet                                                         │
+│     │                                                             │
+│     ▼                                                             │
+│  AWS ALB (Application Load Balancer, HTTP-only currently)         │
+│     │  :80                                                        │
+│     ▼                                                             │
+│  ┌────────────────────────────────────────────────────────────┐   │
+│  │  EKS Cluster (ap-south-1)                                  │   │
+│  │  ┌──────────────────────────────────────────────────────┐  │   │
+│  │  │ Namespace: election                                  │  │   │
+│  │  │                                                      │  │   │
+│  │  │  [Frontend Pod x2]  nginx + React, uid 101 (non-root)│  │   │
+│  │  │        │ /api/* → backend-svc                        │  │   │
+│  │  │  [Backend Pod x2]   ASP.NET Core 8                   │  │   │
+│  │  └──────────────────────┬───────────────────────────────┘  │   │
+│  │  Namespace: argocd                                         │   │
+│  │  ┌──────────────────────────────────────────────────────┐  │   │
+│  │  │ ArgoCD — watches this git repo, auto-syncs on push   │  │   │
+│  │  └──────────────────────────────────────────────────────┘  │   │
+│  │  Namespace: kube-system                                    │   │
+│  │  ┌──────────────────────────────────────────────────────┐  │   │
+│  │  │ AWS Load Balancer Controller — IRSA-scoped IAM role  │  │   │
+│  │  └──────────────────────────────────────────────────────┘  │   │
+│  └──────────────────────┼─────────────────────────────────────┘   │
+│                         ▼                                         │
+│  RDS SQL Server (private subnet)                                  │
+│  Database: ElectionDB, restored from S3 via native RDS restore    │
+│                                                                   │
+│  ECR: electionpulse-wb/{frontend,backend,migration}               │
+│                                                                   │
+│  GitHub Actions:                                                  │
+│    ci-cd.yml       → build/push images, bump Kustomize image tags │
+│    terraform.yml   → plan on PR, apply on push (manual approval)  │
+│  Both authenticate via OIDC — no long-lived AWS keys in GitHub.   │
 └───────────────────────────────────────────────────────────────────┘
 ```
 
